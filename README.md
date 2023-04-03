@@ -20,17 +20,21 @@ conda install -c conda-forge spacy-model-en_core_web_sm
 # Misc Utilities
 conda install -c anaconda beautifulsoup4
 conda install -c anaconda lxml
-conda install -c anaconda scikit-learn
 ```
 
 ## Dataset Setup and Processing
-Create a ```dataset\``` folder in the top directory of your local repository.<br>
-Download [Amazon Fine Food Reviews Dataset](https://www.kaggle.com/datasets/snap/amazon-fine-food-reviews) and unzip the contents to ```dataset\``` folder.<br>
-You should now have ```dataset\Reviews.csv``` file in your local repository.<br>
+Create a ```dataset/``` folder in the top directory of your local repository.<br>
+Download [Amazon Fine Food Reviews Dataset](https://www.kaggle.com/datasets/snap/amazon-fine-food-reviews) and unzip the contents to ```dataset/``` folder.<br>
+You should now have ```dataset/Reviews.csv``` file in your local repository.<br>
 
 After the above, run the ```clean_reviews_csv.py``` script.<br>
-This would generate a ```postprocessing/Reviews_processed.csv``` file which contains only valid rows from the original ```dataset\Reviews.csv``` file.<br>
+This would generate a ```postprocessing/Reviews_processed.csv``` file which contains only valid rows from the original ```dataset/Reviews.csv``` file.<br>
 There will also be two new columns:<br>
 ```cText``` which is the cleaned version of ```Text``` column.<br>
 and ```cSummary``` which is the cleaned version of ```Summary``` column.<br>
+<br>
+You only need to generate ```postprocessing/Reviews_processed.csv``` once, unless there are changes to the way we process the data before training the model.
+Model training would use this generated csv.
 
+## Training the Model
+The entry point of the program for training the Summarization model(s) is at ```main.py```.
