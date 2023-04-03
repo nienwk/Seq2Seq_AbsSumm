@@ -6,7 +6,6 @@ import torch
 import globalconstants
 from dataset import AmazonFineFoodDataset, collate_fn, KEY_WV_REVIEW, KEY_WV_SUMMARY
 from torch.utils.data import Dataset, DataLoader, random_split
-from sklearn.model_selection import train_test_split
 
 SEED = 12345
 TRAIN_VAL_TEST_SPLIT = [0.7, 0.1, 0.2]
@@ -14,15 +13,17 @@ BATCH_SIZE = 64
 
 
 if __name__ == "__main__":
+    # Spacy NLP Object
     nlp=spacy.load("en_core_web_sm")
 
+    # Load the dataset
     print('Loading Dataset')
     dataset = AmazonFineFoodDataset(file_path=globalconstants.POSTPROCESSING_DIR+globalconstants.POSTPROCESSED_CSV, tokenizer=nlp)
     print('Dataset Loaded')
 
     seed_gen = torch.Generator().manual_seed(SEED)
 
-    # Load the dataset and split into train/val/test
+    #  Split into train/val/test
     train_data, val_data, test_data = random_split(dataset, TRAIN_VAL_TEST_SPLIT, generator=seed_gen)
     print('Dataset Split Done   Train: ' + str(len(train_data)) + ' Val: ' + str(len(val_data)) + ' Test: ' + str(len(test_data)))
 

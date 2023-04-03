@@ -8,6 +8,31 @@ KEY_WV_REVIEW = 'wv_review'
 KEY_WV_SUMMARY = 'wv_summary'
 
 
+class AmazonFineFoodDataset(Dataset):
+    def __init__(self, file_path, tokenizer):
+        self.tokenizer = tokenizer
+        self.data = pd.read_csv(file_path)
+        self.data = self.data[[globalconstants.FIELDNAME_CLEANED_TEXT, globalconstants.FIELDNAME_CLEANED_SUMMARY]]
+        
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, index):
+        row = self.data.iloc[index]
+
+        # Get Word Vector for Full Review
+        review = row[globalconstants.FIELDNAME_CLEANED_TEXT]
+        doc_review = self.tokenizer(review)
+        wv_review = torch.stack([torch.from_numpy(token.vector) for token in doc_review])
+
+        # Get Word Vector for Summary
+        summary = row[globalconstants.FIELDNAME_CLEANED_SUMMARY]
+        doc_summary = self.tokenizer(summary)
+        wv_summary = torch.stack([torch.from_numpy(token.vector) for token in doc_summary])
+        
+        return {KEY_WV_REVIEW: wv_review, KEY_WV_SUMMARY: wv_summary}
+
+
 def collate_fn(batch):
 
     # --- Get Reviews in batch to be of same length 
@@ -45,27 +70,3 @@ def collate_fn(batch):
     
 
     return {KEY_WV_REVIEW: batch_review, KEY_WV_SUMMARY: batch_summary}
-
-class AmazonFineFoodDataset(Dataset):
-    def __init__(self, file_path, tokenizer):
-        self.tokenizer = tokenizer
-        self.data = pd.read_csv(file_path)
-        self.data = self.data[[globalconstants.FIELDNAME_CLEANED_TEXT, globalconstants.FIELDNAME_CLEANED_SUMMARY]]
-        
-    def __len__(self):
-        return len(self.data)
-    
-    def __getitem__(self, index):
-        row = self.data.iloc[index]
-
-        # Get Word Vector for Full Review
-        review = row[globalconstants.FIELDNAME_CLEANED_TEXT]
-        doc_review = self.tokenizer(review)
-        wv_review = torch.stack([torch.from_numpy(token.vector) for token in doc_review])
-
-        # Get Word Vector for Summary
-        summary = row[globalconstants.FIELDNAME_CLEANED_SUMMARY]
-        doc_summary = self.tokenizer(summary)
-        wv_summary = torch.stack([torch.from_numpy(token.vector) for token in doc_summary])
-        
-        return {KEY_WV_REVIEW: wv_review, KEY_WV_SUMMARY: wv_summary}
