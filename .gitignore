@@ -130,5 +130,5 @@ dmypy.json
 
 
 # AI6127 Project
-/dataset
-/postprocessing
+data/
+*.pth

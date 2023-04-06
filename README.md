@@ -2,39 +2,48 @@
 This is a project on summarization for AI6127 Deep Neural Networks for Natural Language Processing
 
 ## Environment Setup
-Python version 3.9, Anaconda Navigator 2.4.0.<br>
-On Anaconda Navigator, install ```pandas``` and ```nltk```<br>.
-<br>
-Open terminal for your current Anaconda Environment and install the following:
-```
-# Assumption: Your device can support CUDA and have CUDA toolkit installed
-conda install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
+From a command line, run:
+`conda env create -f environment.yml`
 
-# Torchtext
-conda install -c pytorch torchtext
+Activate it using the command:
+`conda activate AI6127-proj`
 
-# Spacy
-conda install -c conda-forge spacy
-conda install -c conda-forge spacy-model-en_core_web_sm
-
-# Misc Utilities
-conda install -c anaconda beautifulsoup4
-conda install -c anaconda lxml
-```
+If you choose to use Anaconda Navigator, use the provided `environment.yml` for a guide to know what to install.
 
 ## Dataset Setup and Processing
-Create a ```dataset/``` folder in the top directory of your local repository.<br>
-Download [Amazon Fine Food Reviews Dataset](https://www.kaggle.com/datasets/snap/amazon-fine-food-reviews) and unzip the contents to ```dataset/``` folder.<br>
-You should now have ```dataset/Reviews.csv``` file in your local repository.<br>
+Create a `data/` folder in the `seq2seq_text_summarization` directory of your local repository.<br>
+Download [Amazon Fine Food Reviews Dataset](https://www.kaggle.com/datasets/snap/amazon-fine-food-reviews) and unzip the contents to ```data/``` folder.<br>
+You should now have ```data/Reviews.csv``` file in `seq2seq_text_summarization` directory of your local repository.<br>
 
-After the above, run the ```clean_reviews_csv.py``` script.<br>
-This would generate a ```postprocessing/Reviews_processed.csv``` file which contains only valid rows from the original ```dataset/Reviews.csv``` file.<br>
-There will also be two new columns:<br>
-```cText``` which is the cleaned version of ```Text``` column.<br>
-and ```cSummary``` which is the cleaned version of ```Summary``` column.<br>
-<br>
-You only need to generate ```postprocessing/Reviews_processed.csv``` once, unless there are changes to the way we process the data before training the model.
-Model training would use this generated csv.
+After the above, run the ```prepData.py``` script.<br>
+This would generate the train, validation and test splits of the data, while printing some statistics.<br>
+The file names of the splits are `train.csv`, `val.csv` and `test.csv`.<br>
+In each of the output csv's, there will be some columns to note:
+- ```cText``` which is the cleaned version of ```Text``` column.
+- ```cSummary``` which is the cleaned version of ```Summary``` column.
+- `input_seq_len` which is the tokenized length of the cleaned version of `Text`.
+- `summ_seq_len` which is the tokenized length of the cleaned version of `Summary`.
+
+You only need to execute ```prepData.py``` once, unless there are changes to the way we process the data before training the model.
+Model training would use the generated csv's, namely:
+- `train.csv`
+- `val.csv`
+- `test.csv`
 
 ## Training the Model
-The entry point of the program for training the Summarization model(s) is at ```main.py```.
+The entry point of the program for training the Summarization model(s) is at ```train.py```.
+
+## TO-DO List
+- [x] Setup BucketIterator equivalent.
+- [ ] Prepare encoder models.
+  - [ ] Prepare dimension matching with decoder model. See `proj_size` of `LSTM` module.
+- [ ] Prepare decoder models
+  - [ ] Prepare attention layer inside decoder model
+- [ ] Prepare sequence-to-sequence models
+  - [ ] Prepare beam search in sequence-to-sequence model
+- [x] Setup saving utilities
+- [ ] Test saving utilities
+- [x] Setup training regime
+- [ ] Test training regime
+- [ ] Setup testing regime
+- [ ] Test testing regime

@@ -1,0 +1,19 @@
+name: AI6127-proj
+channels:
+  - conda-forge
+  - pytorch
+  - nvidia
+dependencies:
+  - python=3.9
+  - pytorch
+  - pytorch-cuda=11.7
+  - torchtext
+  - torchmetrics
+  - spacy
+  - spacy-model-en_core_web_sm
+  - nltk
+  - lxml
+  - beautifulsoup4
+  - pandas
+  - scikit-learn
+  - matplotlib
