@@ -16,7 +16,7 @@ FIELDNAME_CLEANED_SUMM_LEN = "summ_seq_len"
 SPLIT_SEED = 3666292228
 
 # Train-val-test ratio
-SPLIT_RATIO = (0.8, 0.1, 0.1)
+SPLIT_RATIO = (80, 10, 10)
 
 # Input sequence length thresholds for stratification in splitting
 SHORT_SEQ = 10

@@ -36,7 +36,7 @@ def generate_splits():
     # plt.savefig("data_distribution_len_category.png", bbox_inches="tight")
     # plt.close()
 
-    train_val, test = train_test_split(data, test_size=SPLIT_RATIO[2], train_size=(SPLIT_RATIO[0]+SPLIT_RATIO[1]), random_state=SPLIT_SEED, shuffle=True, stratify=data["input_seq_category"])
+    train_val, test = train_test_split(data, test_size=SPLIT_RATIO[2]/sum(SPLIT_RATIO), train_size=(SPLIT_RATIO[0]+SPLIT_RATIO[1])/sum(SPLIT_RATIO), random_state=SPLIT_SEED, shuffle=True, stratify=data["input_seq_category"])
     train, val = train_test_split(train_val, test_size=SPLIT_RATIO[1]/(SPLIT_RATIO[0]+SPLIT_RATIO[1]), train_size=SPLIT_RATIO[0]/(SPLIT_RATIO[0]+SPLIT_RATIO[1]), random_state=SPLIT_SEED+1, shuffle=True, stratify=train_val["input_seq_category"])
     
     print(f"Number of training samples obtained : {len(train)}")
