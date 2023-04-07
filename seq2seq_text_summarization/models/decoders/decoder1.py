@@ -3,7 +3,7 @@ import torch.nn as nn
 from typing import Tuple
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
-class decoder1(nn.Module):
+class Decoder1(nn.Module):
     def __init__(
         self,
         vocab_size : int,
@@ -13,7 +13,7 @@ class decoder1(nn.Module):
         ):
         """Decoder RNN using LSTM.
         """
-        super(decoder1, self).__init__()
+        super(Decoder1, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
         self.rnn = nn.LSTM(embedding_dim, hidden_dim, bidirectional=False)
 

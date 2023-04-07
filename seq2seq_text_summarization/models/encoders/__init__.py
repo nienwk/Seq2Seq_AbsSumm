@@ -1,5 +1,5 @@
-from .encoder1 import encoder1
+from .encoder1 import Encoder1
 
 __all__ = (
-    "encoder1",
+    "Encoder1",
 )

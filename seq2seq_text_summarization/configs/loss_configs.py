@@ -1,2 +1,2 @@
 # Config for CrossEntropyLoss
-LABEL_SMOOTHING = 1e-3
+LABEL_SMOOTHING = 0.1

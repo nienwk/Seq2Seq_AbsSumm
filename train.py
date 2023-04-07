@@ -263,7 +263,7 @@ def main(args):
 
         # TODO Load previous model state, i.e. parameters
         if args.model == "model1":
-            net = model1(encoder1(), decoder1()).to(device)
+            net = Model1(Encoder1(), Decoder1()).to(device)
             net.load_state_dict(checkpoint['model_state_dict'])
         else:
             raise NotImplementedError(f"model is not implemented! Got model name {args.model}")
@@ -343,7 +343,7 @@ def main(args):
 
         # TODO Setup model
         if args.model == "model1":
-            net = model1(encoder1(), decoder1()).to(device)
+            net = Model1(Encoder1(), Decoder1()).to(device)
         else:
             raise NotImplementedError(f"model is not implemented! Got model name {args.model}")
 
