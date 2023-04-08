@@ -13,7 +13,7 @@ from numpy import mean as npmean
 import argparse
 import os
 from textwrap import dedent
-from typing import Tuple, List, Dict
+from typing import Tuple
 
 from seq2seq_text_summarization.helpers.training import setup_metrics_dict, compute_metrics, collate_metrics, append_metrics, print_metrics
 from seq2seq_text_summarization.helpers.save_utility import save_checkpoint
@@ -46,10 +46,10 @@ def train_epoch(
     validloader: DataLoader,
     vocabulary: Vocab,
     preEpoch_generator_state: torch.Tensor,
-    train_loss: List[float],
-    val_loss: List[float],
-    train_metrics: Dict[str, List[float]],
-    val_metrics: Dict[str, List[float]],
+    train_loss: list[float],
+    val_loss: list[float],
+    train_metrics: dict[str, list[float]],
+    val_metrics: dict[str, list[float]],
     scheduler=None,
     verbose: bool = True,
     val_freq: int = VALID_FREQ,
@@ -58,7 +58,7 @@ def train_epoch(
     save_slot: int = None,
     print_freq: int = PRINT_FREQ,
     prev_iter: int = None,
-    ) -> Tuple[List[float], List[float], Dict[str,List[float]], Dict[str, List[float]]]:
+    ) -> Tuple[list[float], list[float], dict[str, list[float]], dict[str, list[float]]]:
 
     rouge=ROUGEScore(rouge_keys=rouge_keys)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -170,7 +170,7 @@ def eval(
     verbose: bool,
     rouge: ROUGEScore,
     rouge_keys: Tuple,
-    )-> Tuple[float, Dict]:
+    )-> Tuple[float, dict]:
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     net.eval()

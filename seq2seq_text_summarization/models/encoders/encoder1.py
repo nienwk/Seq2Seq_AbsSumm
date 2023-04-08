@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
-from torch.nn.utils.rnn import PackedSequence
+from torch.nn.utils.rnn import PackedSequence, pad_packed_sequence
 
 from typing import Tuple
 
-from ...configs.model_configs import MODEL1_EMBEDDING_DIM, MODEL1_ENCODER_HIDDEN_DIM, MODEL1_ENCODER_NUM_LAYERS, MODEL1_GLOBAL_DROPOUT_P, MODEL1_ENCODER_BIDIRECTIONAL, MODEL1_DECODER_HIDDEN_DIM, MODEL1_ACTIVATION
+from ...configs.model_configs import MODEL1_EMBEDDING_DIM, MODEL1_ENCODER_HIDDEN_DIM, MODEL1_ENCODER_NUM_LAYERS, MODEL1_ENCODER_RNN_DROPOUT_P, MODEL1_ENCODER_FC_DROPOUT_P, MODEL1_ENCODER_BIDIRECTIONAL, MODEL1_DECODER_HIDDEN_DIM, MODEL1_ACTIVATION
 
 class Encoder1(nn.Module):
     def __init__(
@@ -12,7 +12,8 @@ class Encoder1(nn.Module):
         embedding_dim: int = MODEL1_EMBEDDING_DIM,
         hidden_dim: int = MODEL1_ENCODER_HIDDEN_DIM,
         num_layers: int = MODEL1_ENCODER_NUM_LAYERS,
-        dropout_p: float = MODEL1_GLOBAL_DROPOUT_P,
+        rnn_dropout_p: float = MODEL1_ENCODER_RNN_DROPOUT_P,
+        fc_dropout_p: float = MODEL1_ENCODER_FC_DROPOUT_P,
         bidirectional: bool = MODEL1_ENCODER_BIDIRECTIONAL,
         decoder_hidden_dim : int = MODEL1_DECODER_HIDDEN_DIM,
         activation: str = MODEL1_ACTIVATION,
@@ -36,7 +37,7 @@ class Encoder1(nn.Module):
             hidden_size=hidden_dim,
             num_layers=num_layers,
             batch_first=True,
-            dropout=dropout_p,
+            dropout=rnn_dropout_p,
             bidirectional=bidirectional,
             proj_size=proj_size,
             )
@@ -50,11 +51,15 @@ class Encoder1(nn.Module):
         else:
             raise NotImplementedError(f"Activation function not supported. Expects 'relu' or 'gelu'. Got {activation}")
 
-        self.dropout = nn.Dropout(p=dropout_p)
+        self.dropout = nn.Dropout(p=fc_dropout_p)
 
 
-    def forward(self, input: PackedSequence) -> Tuple[PackedSequence, Tuple[torch.Tensor, torch.Tensor]]:
-        """Expects `input` to be a `torch.nn.utils.rnn.PackedSequence` obtained from passing the `torch.nn.utils.rnn.PackedSequence` of batched text indices from the dataloader into an embedding layer, likely with a helper function.
+    def forward(self, input: PackedSequence) -> Tuple[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]:
+        """Expects `input` to be a `torch.nn.utils.rnn.PackedSequence` obtained from passing the `torch.nn.utils.rnn.PackedSequence` of batched text indices from the dataloader into an embedding layer, likely with a helper function.\n
+        \\
+        Returns a 2-tuple of 2-tuples.\n
+        The first 2-tuple consists of a tensor of padded encoder outputs (pads are `float(-inf)`) and a tensor containing the original sequence lengths of the batch of inputs. This is the output of a `torch.nn.utils.rnn.pad_packed_sequence` call.\n
+        The second 2-tuple consists of the final hidden state and final cell state, augmented as necessary for direct use as the decoder initial hidden and cell states.
         """
         output, (hidden, cell) = self.rnn(input)
         # IF batch size >= 2, THEN:
@@ -83,4 +88,6 @@ class Encoder1(nn.Module):
             cell = cell.permute(1,0,2).reshape(batch_size, self.num_layers, self.decoder_hidden_dim).permute(1,0,2)
         # cell tensor shape [num_layers, batch size, decoder hidden dim]
 
-        return output, (hidden, cell)
+        padded_encoder_outputs, input_seq_lengths = pad_packed_sequence(output, batch_first=True, padding_value=float("-inf"))
+
+        return (padded_encoder_outputs, input_seq_lengths), (hidden, cell)
