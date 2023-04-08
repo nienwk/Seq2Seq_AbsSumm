@@ -1,6 +1,6 @@
 from __future__ import annotations
 from torch.nn.utils.rnn import PackedSequence
-from torch import Tensor, vstack
+from torch import Tensor, ones, vstack
 from torch.nn import Embedding, Module
 from typing import Union, Callable, Tuple
 
@@ -17,6 +17,19 @@ def packed_seq_apply(module: Union[Module, Callable[[float],float]], packed_sequ
     """
     return PackedSequence(module(packed_sequence.data), packed_sequence.batch_sizes, packed_sequence.sorted_indices, packed_sequence.unsorted_indices)
 
+def compute_attention_key_padding_mask(sequence_lengths:Tensor) -> Tensor:
+    r"""Computes attention key_padding_mask for MultiHeadAttention from a tensor of sequence lengths.
+    
+    Will convert sequence_lengths to dtype int32."""
+    integer_seq_len = sequence_lengths.int() # conversion
+    attention_mask = ones(len(integer_seq_len), max(integer_seq_len).item()) * float("-inf")
+    # NOTE len(integer_seq_len) is essentially the batch size, max(integer_seq_len).item() is the longest sequence length in the batch.
+    # attention mask shape = [batch size, longest seq len]
+    for batch_idx, seq in enumerate(attention_mask):
+        seq[:integer_seq_len[batch_idx]] = Tensor([0]*integer_seq_len[batch_idx])
+    return attention_mask
+
+
 def compute_running_ave(old_ave:float, old_len:int, new_x:float) -> Tuple[float,int]:
     new_ave = old_ave + ((new_x - old_ave) / old_len)
     return new_ave, old_len+1
@@ -31,8 +44,9 @@ class GeneratedWord(object):
         log_prob: float,
         hidden: Tensor,
         cell: Tensor,
-        attentioned_vector: Tensor,
-        encoder_outputs: Tuple[Tensor, Tensor] = None
+        attentional_vector: Tensor,
+        padded_encoder_output: Tensor = None,
+        attention_key_padding_mask: Tensor = None,
         ) -> None:
         r"""Custom class for generated words. Also represents a hypothesis. Keeps track of the following:
 
@@ -50,9 +64,11 @@ class GeneratedWord(object):
 
         cell : The LSTM cell state after processing the previous word, i.e. the input of the sequence timestep that this `GeneratedWord` belongs to. If this `GeneratedWord` is w_t, then cell is cell_t. Should be directly usable for decoding in the next sequence timestep.
 
-        attentioned_vector : The attentioned vector obtained by concatenating the attention context vector c_t and hidden h_t, passing through fully connected layer and activation. See Attentional Hidden State \tilde{h}_t of paper, Effective Approaches to Attention-based Neural Machine Translation.
+        attentional_vector : The attentional vector obtained by concatenating the attention context vector c_t and hidden h_t, passing through fully connected layer and activation. See Attentional Hidden State \tilde{h}_t of paper, Effective Approaches to Attention-based Neural Machine Translation.
 
-        encoder_outputs : The 2-tuple of `padded_encoder_output` and `input_seq_lengths` obtained directly from encoder. Only need to be initialized once for starting `GeneratedWord` with no prev_word. Otherwise inherited from prev_word.
+        padded_encoder_output : The `padded_encoder_output` obtained directly from encoder, which is one of the outputs of a `torch.nn.utils.rnn.pad_packed_sequence` call. Only needs to be initialized once for starting `GeneratedWord` with no prev_word. Otherwise inherited from prev_word.
+
+        attention_key_padding_mask : The `attention_key_padding_mask` computed with helper function `compute_attention_key_padding_mask`. Only needs to be initialized once for starting `GeneratedWord` with no prev_word. Otherwise inherited from prev_word.
         """
 
         self.batch_idx = batch_idx
@@ -62,14 +78,17 @@ class GeneratedWord(object):
         self.logits_used = logits_used
         self.hidden = hidden
         self.cell = cell
-        self.attentioned_vector = attentioned_vector
+        self.attentional_vector = attentional_vector
 
         if self.prev_word != None:
             self.culmulative_normalized_log_prob, self.curr_seq_len = compute_running_ave(prev_word.culmulative_normalized_log_prob, prev_word.curr_seq_len, log_prob)
-            self.encoder_outputs = prev_word.encoder_outputs
+            self.padded_encoder_output = prev_word.padded_encoder_output
+            self.attention_key_padding_mask = prev_word.attention_key_padding_mask
         else:
-            assert encoder_outputs!=None, f"Input encoder_outputs argument cannot be None for GeneratedWord object with no prev_word!"
-            self.encoder_outputs = encoder_outputs
+            assert padded_encoder_output != None, f"Input padded_encoder_output argument cannot be None for GeneratedWord object with no prev_word!"
+            assert attention_key_padding_mask != None, f"Input attention_key_padding_mask argument cannot be None for GeneratedWord object with no prev_word!"
+            self.padded_encoder_output = padded_encoder_output
+            self.attention_key_padding_mask = attention_key_padding_mask
             self.culmulative_normalized_log_prob = log_prob
             self.curr_seq_len = 1
 

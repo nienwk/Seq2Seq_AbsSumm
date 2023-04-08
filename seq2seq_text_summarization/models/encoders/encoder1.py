@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.utils.rnn import PackedSequence, pad_packed_sequence
 
 from typing import Tuple
@@ -45,9 +46,9 @@ class Encoder1(nn.Module):
         self.fc = nn.Linear(in_features=hidden_dim, out_features=proj_size, bias=True)
 
         if activation == "gelu":
-            self.activation = nn.GELU()
+            self.activation = F.gelu()
         elif activation == "relu":
-            self.activation = nn.ReLU()
+            self.activation = F.relu()
         else:
             raise NotImplementedError(f"Activation function not supported. Expects 'relu' or 'gelu'. Got {activation}")
 
