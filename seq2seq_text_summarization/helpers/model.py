@@ -1,6 +1,6 @@
 from __future__ import annotations
 from torch.nn.utils.rnn import PackedSequence
-from torch import Tensor, ones, vstack
+from torch import Tensor, Size, ones, vstack
 from torch.nn import Embedding, Module
 from typing import Union, Callable, Tuple
 
@@ -37,60 +37,75 @@ def compute_running_ave(old_ave:float, old_len:int, new_x:float) -> Tuple[float,
 class GeneratedWord(object):
     def __init__(
         self,
-        batch_idx: int,
         prev_word: Union[GeneratedWord, None],
         vocab_idx: int,
         logits_used: Tensor,
-        log_prob: float,
+        log_prob: Union[Tensor[float], float], # used to compute hypothesis-length normalized log probability of hypothesis that this `GeneratedWord` belongs to, using helper function `compute_running_ave`.
         hidden: Tensor,
         cell: Tensor,
         attentional_vector: Tensor,
+        untrimmed_attn_weights: Tensor,
+        batch_idx: int = None,
+        source_sequence_len: int = None,
         padded_encoder_output: Tensor = None,
         attention_key_padding_mask: Tensor = None,
         ) -> None:
         r"""Custom class for generated words. Also represents a hypothesis. Keeps track of the following:
 
-        batch_idx : The index referencing the original batch of N input to `Model` that this `GeneratedWord` is part of. For example, if we generated this word for a `Hypothesis` belonging to the 3rd batch item of the original batch of N, batch_idx should be set to 2.
-
         prev_word : The preceding `GeneratedWord` of this word. Manually set to None if using for the start token.
 
         vocab_idx : The vocabulary index of this `GeneratedWord`.
 
-        logits_used : The pre-SoftMax/LogSoftMax logits used to compute this `GeneratedWord`.
+        logits_used : The pre-SoftMax/LogSoftMax logits used to compute this `GeneratedWord`. Expected shape = [1,1,vocab_size]
 
         log_prob : The log probability of generating this `GeneratedWord`. Obtained from one of the outputs of a `torch.topk` function call.
 
-        hidden : The LSTM hidden state after processing the previous word, i.e. the input of the sequence timestep that this `GeneratedWord` belongs to. If this `GeneratedWord` is w_t, then hidden is h_t. Should be directly usable for decoding in the next sequence timestep.
+        hidden : The LSTM hidden state after processing the previous word, i.e. the input of the sequence timestep that this `GeneratedWord` belongs to. If this `GeneratedWord` is w_t, then hidden is h_t. Should be directly usable for decoding in the next sequence timestep. Expected shape = [num_layers, 1, decoder hidden dim]
 
-        cell : The LSTM cell state after processing the previous word, i.e. the input of the sequence timestep that this `GeneratedWord` belongs to. If this `GeneratedWord` is w_t, then cell is cell_t. Should be directly usable for decoding in the next sequence timestep.
+        cell : The LSTM cell state after processing the previous word, i.e. the input of the sequence timestep that this `GeneratedWord` belongs to. If this `GeneratedWord` is w_t, then cell is cell_t. Should be directly usable for decoding in the next sequence timestep. Expected shape = [num_layers, 1, decoder hidden dim]
 
-        attentional_vector : The attentional vector obtained by concatenating the attention context vector c_t and hidden h_t, passing through fully connected layer and activation. See Attentional Hidden State \tilde{h}_t of paper, Effective Approaches to Attention-based Neural Machine Translation.
+        attentional_vector : The attentional vector obtained by concatenating the attention context vector c_t and hidden h_t, passing through fully connected layer and activation. Expected shape = [1, 1, decoder_attentional_fc_out_dim]. See Attentional Hidden State \tilde{h}_t of paper, Effective Approaches to Attention-based Neural Machine Translation.
 
-        padded_encoder_output : The `padded_encoder_output` obtained directly from encoder, which is one of the outputs of a `torch.nn.utils.rnn.pad_packed_sequence` call. Only needs to be initialized once for starting `GeneratedWord` with no prev_word. Otherwise inherited from prev_word.
+        untrimmed_attn_weights : The untrimmed attention weights obtained from the decoder directly. Needs to be the relevant `attn_output_weights` from the decoder and should be of shape = [1, 1, max_source_seq_len (across the original batch of N input to `Model`)]. Uses `source_sequence_len` to be trimmed to the correct shape.
 
-        attention_key_padding_mask : The `attention_key_padding_mask` computed with helper function `compute_attention_key_padding_mask`. Only needs to be initialized once for starting `GeneratedWord` with no prev_word. Otherwise inherited from prev_word.
+        batch_idx : The index referencing the original batch of N input to `Model` that this `GeneratedWord` is part of. For example, if we generated this word for a `Hypothesis` belonging to the 3rd batch item of the original batch of N, batch_idx should be set to 2. Only needs to be initialized once for starting `GeneratedWord` with no prev_word. Otherwise inherited from prev_word.
+
+        source_sequence_len : The length of the source text sequence for this `GeneratedWord`'s hypothesis. Used to trim `untrimmed_attn_weights` input. Only needs to be initialized once for starting `GeneratedWord` with no prev_word. Otherwise inherited from prev_word.
+
+        padded_encoder_output : The `padded_encoder_output` obtained directly from encoder, which is one of the outputs of a `torch.nn.utils.rnn.pad_packed_sequence` call. Expected shape = [1, batch_max_input_seq_length, decoder_hidden_dim]. Only needs to be initialized once for starting `GeneratedWord` with no prev_word. Otherwise inherited from prev_word.
+
+        attention_key_padding_mask : The `attention_key_padding_mask` computed with helper function `compute_attention_key_padding_mask`. Expected shape = [1, batch_max_input_seq_length]. Only needs to be initialized once for starting `GeneratedWord` with no prev_word. Otherwise inherited from prev_word.
         """
 
-        self.batch_idx = batch_idx
         self.prev_word = prev_word
         self.vocab_idx = vocab_idx
 
-        self.logits_used = logits_used
+        self.logits_used = logits_used.squeeze(1)
         self.hidden = hidden
         self.cell = cell
         self.attentional_vector = attentional_vector
 
         if self.prev_word != None:
             self.culmulative_normalized_log_prob, self.curr_seq_len = compute_running_ave(prev_word.culmulative_normalized_log_prob, prev_word.curr_seq_len, log_prob)
+            self.batch_idx = prev_word.batch_idx
+            self.source_sequence_len = prev_word.source_sequence_len
             self.padded_encoder_output = prev_word.padded_encoder_output
             self.attention_key_padding_mask = prev_word.attention_key_padding_mask
         else:
+            assert batch_idx != None, f"Input batch_idx argument cannot be None for GeneratedWord object with no prev_word!"
+            assert source_sequence_len != None, f"Input source_sequence_len argument cannot be None for GeneratedWord object with no prev_word!"
             assert padded_encoder_output != None, f"Input padded_encoder_output argument cannot be None for GeneratedWord object with no prev_word!"
             assert attention_key_padding_mask != None, f"Input attention_key_padding_mask argument cannot be None for GeneratedWord object with no prev_word!"
+            self.batch_idx = batch_idx
+            self.source_sequence_len = source_sequence_len
             self.padded_encoder_output = padded_encoder_output
             self.attention_key_padding_mask = attention_key_padding_mask
             self.culmulative_normalized_log_prob = log_prob
             self.curr_seq_len = 1
+        
+        assert untrimmed_attn_weights.shape[:2] == Size([1,1]), f"Sanity check failed. untrimmed_attn_weights shape should be [1, 1, max_input_seq_len]. Got {untrimmed_attn_weights.shape}"
+        self.attn_weights = untrimmed_attn_weights[:,:,:self.source_sequence_len].squeeze()
+        # self.attn_weights shape = [self.source_sequence_len]
 
     def __len__(self):
         """Returns the current hypothesis length."""
@@ -130,3 +145,12 @@ class GeneratedWord(object):
         else:
             return vstack((self.prev_word.get_hypothesis_logits(), self.logits_used))
     
+    def get_attn_weights(self):
+        r"""Method to get the attention weights (used for display) over the entire hypothesis sequence.
+
+        Remember to collate across original batch in correct order for output of Model !!!
+        """
+        if self.prev_word == None:
+            return self.attn_weights
+        else:
+            return vstack((self.prev_word.get_attn_weights(), self.attn_weights))

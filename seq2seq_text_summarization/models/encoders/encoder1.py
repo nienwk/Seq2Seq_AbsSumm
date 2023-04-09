@@ -66,12 +66,12 @@ class Encoder1(nn.Module):
         """
         output, (hidden, cell) = self.rnn(input)
         # IF batch size >= 2, THEN:
-        # output original tensor shape = [batch size, max seq len, num_direction * proj_size]; it is converted into a PackedSequence.
+        # output original tensor shape = [batch size, max seq len, decoder hidden dim = num_direction * proj_size]; it is converted into a PackedSequence.
         # hidden tensor shape = [num_direction * num_layers, batch size, proj_size]; needs to be manually stacked, as seen below.
         # cell tensor shape = [num_direction * num_layers, batch size, hidden_dim]; needs to be passed via a fully connected layer to convert to an appropriate cell state for the decoder.
 
-        # ELSE if unbatched, i.e. batch size == 1:
-        # output original tensor shape = [max seq len, num_direction * proj_size]; it is converted into a PackedSequence.
+        # ELSE if unbatched, i.e. batch size is 1:
+        # output original tensor shape = [max seq len, decoder hidden dim = num_direction * proj_size]; it is converted into a PackedSequence.
         # hidden tensor shape = [num_direction * num_layers, 1, proj_size]; needs to be manually stacked, as seen below.
         # cell tensor shape = [num_direction * num_layers, 1, hidden_dim]; needs to be passed via a fully connected layer to convert to an appropriate cell state for the decoder.
 
@@ -93,4 +93,9 @@ class Encoder1(nn.Module):
 
         padded_encoder_outputs, input_seq_lengths = pad_packed_sequence(output, batch_first=True, padding_value=float("-inf"))
 
+        # Returns:
+        # padded_encoder_outputs shape = [batch size, max seq len, decoder hidden dim = num_direction * proj_size]
+        # input_seq_lengths shape = [batch size]
+        # hidden tensor shape = [num_layers, batch size, decoder hidden dim]
+        # cell tensor shape = [num_layers, batch size, decoder hidden dim]
         return (padded_encoder_outputs, input_seq_lengths), (hidden, cell)

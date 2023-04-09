@@ -84,14 +84,18 @@ def train_epoch(
         # output_seq should be a list of lists, where it is ordered by the batch,
         # and each inner list contains the token indices (must be passable into vocabulary.lookup_tokens() method)
         # of an output sequence.
-        # output_logits shape = (batch_size, vocab_size, longest_seq_len)
-        output_seq, output_logits = net(text, summ)
+        # output_logits should be a list of batch_size Tensors of shape = (seq_len, vocab_size)
+        output_seq, output_logits = net(text)
 
         # pad the packed sequence, retrieve the Tensor
-        tmp_summ, _ = pad_packed_sequence(summ, batch_first=True, padding_value=0)
-        # tmp_summ = (batch_size, longest_seq_len)
-        tmp_summ = tmp_summ.long() # convert to long for criterion computation
-        loss = criterion(output_logits, tmp_summ)
+        padded_target_summs, target_lengths = pad_packed_sequence(summ, batch_first=True, padding_value=0)
+        # padded_target_summs = (batch_size, longest_seq_len)
+        padded_target_summs = padded_target_summs.long() # convert to long for criterion computation
+
+        # TODO: trim or pad output_logits to fit, using target_lengths
+        output_logits =
+
+        loss = criterion(output_logits, padded_target_summs)
         loss.backward()
         optimizer.step()
         if not(scheduler is None):
@@ -189,14 +193,18 @@ def eval(
             # output_seq should be a list of lists, where it is ordered by the batch,
             # and each inner list contains the token indices (must be passable into vocabulary.lookup_tokens() method)
             # of an output sequence.
-            # output_logits shape = (batch_size, vocab_size, longest_seq_len)
-            output_seq, output_logits = net(text, summ)
+            # output_logits should be a list of batch_size Tensors of shape = (seq_len, vocab_size)
+            output_seq, output_logits = net(text)
 
             # pad the packed sequence, retrieve the Tensor
-            tmp_summ, _ = pad_packed_sequence(summ, batch_first=True, padding_value=0)
-            # tmp_summ = (batch_size, longest_seq_len)
-            tmp_summ = tmp_summ.long() # convert to long for criterion computation
-            loss = criterion(output_logits, tmp_summ)
+            padded_target_summs, target_lengths = pad_packed_sequence(summ, batch_first=True, padding_value=0)
+            # padded_target_summs = (batch_size, longest_seq_len)
+            padded_target_summs = padded_target_summs.long() # convert to long for criterion computation
+
+            # TODO: trim or pad output_logits to fit, using target_lengths
+            output_logits =
+
+            loss = criterion(output_logits, padded_target_summs)
             test_loss.append(loss.item())
 
             # Compute metrics via helper function
