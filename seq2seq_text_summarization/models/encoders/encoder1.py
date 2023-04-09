@@ -56,10 +56,12 @@ class Encoder1(nn.Module):
 
 
     def forward(self, input: PackedSequence) -> Tuple[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]:
-        """Expects `input` to be a `torch.nn.utils.rnn.PackedSequence` obtained from passing the `torch.nn.utils.rnn.PackedSequence` of batched text indices from the dataloader into an embedding layer, likely with a helper function.\n
-        \\
-        Returns a 2-tuple of 2-tuples.\n
-        The first 2-tuple consists of a tensor of padded encoder outputs (pads are `float(-inf)`) and a tensor containing the original sequence lengths of the batch of inputs. This is the output of a `torch.nn.utils.rnn.pad_packed_sequence` call.\n
+        r"""Expects `input` to be a `torch.nn.utils.rnn.PackedSequence` obtained from passing the `torch.nn.utils.rnn.PackedSequence` of batched text indices from the dataloader into an embedding layer, likely with a helper function.
+
+        Returns a 2-tuple of 2-tuples.
+
+        The first 2-tuple consists of a tensor of padded encoder outputs (pads are `float(-inf)`) and a tensor containing the original sequence lengths of the batch of inputs. This is the output of a `torch.nn.utils.rnn.pad_packed_sequence` call.
+        
         The second 2-tuple consists of the final hidden state and final cell state, augmented as necessary for direct use as the decoder initial hidden and cell states.
         """
         output, (hidden, cell) = self.rnn(input)

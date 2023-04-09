@@ -13,9 +13,9 @@ class Decoder1(nn.Module):
         num_layers: int = MODEL1_DECODER_NUM_LAYERS,
         rnn_dropout_p: float = MODEL1_DECODER_RNN_DROPOUT_P,
         num_attention_head: int = MODEL1_DECODER_NUM_ATTENTION_HEAD,
-        attention_dropout_p: int = MODEL1_DECODER_ATTENTION_DROPOUT_P,
+        attention_dropout_p: float = MODEL1_DECODER_ATTENTION_DROPOUT_P,
         activation: str = MODEL1_ACTIVATION,
-        input_feeding_fc_dropout_p: int = MODEL1_DECODER_INPUT_FEEDING_FC_DROPOUT_P,
+        input_feeding_fc_dropout_p: float = MODEL1_DECODER_INPUT_FEEDING_FC_DROPOUT_P,
         attentional_fc_out_dim: int = MODEL1_DECODER_ATTENTIONAL_FC_OUT_DIM,
         ) -> None:
         """Decoder RNN using LSTM.\n
