@@ -31,8 +31,7 @@ class Encoder1(nn.Module):
         assert decoder_hidden_dim % 2 == 0 if bidirectional else True, \
             f"For bidirectional LSTM, we convert the hidden and cell states' dimensions by dividing decoder hidden dimension by 2. Got decoder hidden dim = {decoder_hidden_dim}"
 
-        proj_size = (decoder_hidden_dim//2) if bidirectional else decoder_hidden_dim
-
+        proj_size = (decoder_hidden_dim//2) if bidirectional else 0
         self.rnn = nn.LSTM(
             input_size=embedding_dim,
             hidden_size=hidden_dim,
@@ -43,12 +42,12 @@ class Encoder1(nn.Module):
             proj_size=proj_size,
             )
 
-        self.fc = nn.Linear(in_features=hidden_dim, out_features=proj_size, bias=True)
+        self.fc = nn.Linear(in_features=hidden_dim, out_features=((decoder_hidden_dim//2) if bidirectional else decoder_hidden_dim), bias=True)
 
         if activation == "gelu":
-            self.activation = F.gelu()
+            self.activation = F.gelu
         elif activation == "relu":
-            self.activation = F.relu()
+            self.activation = F.relu
         else:
             raise NotImplementedError(f"Activation function not supported. Expects 'relu' or 'gelu'. Got {activation}")
 
@@ -91,11 +90,11 @@ class Encoder1(nn.Module):
             cell = cell.permute(1,0,2).reshape(batch_size, self.num_layers, self.decoder_hidden_dim).permute(1,0,2)
         # cell tensor shape [num_layers, batch size, decoder hidden dim]
 
-        padded_encoder_outputs, input_seq_lengths = pad_packed_sequence(output, batch_first=True, padding_value=float("-inf"))
+        padded_encoder_outputs, input_seq_lengths = pad_packed_sequence(output, batch_first=True, padding_value=0)
 
         # Returns:
         # padded_encoder_outputs shape = [batch size, max seq len, decoder hidden dim = num_direction * proj_size]
         # input_seq_lengths shape = [batch size]
         # hidden tensor shape = [num_layers, batch size, decoder hidden dim]
         # cell tensor shape = [num_layers, batch size, decoder hidden dim]
-        return (padded_encoder_outputs, input_seq_lengths), (hidden, cell)
+        return (padded_encoder_outputs, input_seq_lengths), (hidden.contiguous(), cell.contiguous())

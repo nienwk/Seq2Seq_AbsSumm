@@ -22,7 +22,7 @@ from seq2seq_text_summarization.helpers.rng import generator_obj_seed
 from seq2seq_text_summarization.configs.data_prep_configs import POSTPROCESSING_DIR, TRAIN_CSV, VAL_CSV
 from seq2seq_text_summarization.configs.dataloader_configs import TRAIN_BATCH_SIZE, VAL_BATCH_SIZE, NUM_WORKERS, BUCKET_MULTIPLIER, TOKENIZER, LANGUAGE, PAD_TOKEN, START_TOKEN, END_TOKEN, VOCAB_DIR, SOURCE_VOCAB_EXPORT, TARGET_VOCAB_EXPORT
 from seq2seq_text_summarization.configs.model_configs import MODEL1_NAME, MODEL1_ACTIVATION, MODEL1_EMBEDDING_DIM, MODEL1_EMBEDDING_DROPOUT_P, MODEL1_ENCODER_HIDDEN_DIM, MODEL1_ENCODER_NUM_LAYERS, MODEL1_ENCODER_RNN_DROPOUT_P, MODEL1_ENCODER_FC_DROPOUT_P, MODEL1_ENCODER_BIDIRECTIONAL, MODEL1_DECODER_HIDDEN_DIM, MODEL1_DECODER_NUM_LAYERS, MODEL1_DECODER_RNN_DROPOUT_P, MODEL1_DECODER_NUM_ATTENTION_HEAD, MODEL1_DECODER_ATTENTION_DROPOUT_P, MODEL1_DECODER_INPUT_FEEDING_FC_DROPOUT_P, MODEL1_DECODER_ATTENTIONAL_FC_OUT_DIM, MODEL1_BEAM_SEARCH_K, MODEL1_GENERATION_LIMIT, MODEL1_MAX_HYPOTHESIS_COUNT, MODEL1_TEACHER_FORCING_RATE
-from seq2seq_text_summarization.configs.loss_configs import LABEL_SMOOTHING
+from seq2seq_text_summarization.configs.loss_configs import LABEL_SMOOTHING, GRADIENT_CLIPPING
 from seq2seq_text_summarization.configs.optimizer_configs import OPTIMIZER, INITIAL_LEARNING_RATE, WEIGHT_DECAY, SGD_CONFIG, ADAM_CONFIG
 from seq2seq_text_summarization.configs.scheduler_configs import MILESTONE_RATIO, MILESTONE_HARD, LINEAR_LR_CONFIG, COSINE_ANNEALING_CONFIG
 from seq2seq_text_summarization.configs.train_configs import NUM_EPOCHS, ROUGE_KEYS, VALID_FREQ, PRINT_FREQ, SAVE_FREQ
@@ -63,6 +63,7 @@ def train_epoch(
 
     rouge=ROUGEScore(rouge_keys=rouge_keys)
     vocab_size = len(vocabulary)
+    lr = args.learning_rate / 4.0
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if verbose:
@@ -103,14 +104,20 @@ def train_epoch(
         for logit in output_logits:
             if logit.size(0) < batch_max_target_len:
                 len_diff = batch_max_target_len - logit.size(0)
-                logit_padding = torch.empty(len_diff, vocab_size)
+                logit_padding = torch.empty(len_diff, vocab_size).to(device)
                 padded_output_logits.append(torch.vstack((logit, logit_padding)))
             else:
                 padded_output_logits.append(logit[:batch_max_target_len])
-        padded_output_logits = torch.stack(padded_output_logits, dim=0)
+        padded_output_logits = torch.stack(padded_output_logits, dim=0).permute(0,2,1)
         
         loss = criterion(padded_output_logits, padded_target_summs)
         loss.backward()
+
+        # Gradient clipping, adapted from https://github.com/pytorch/examples/blob/main/word_language_model/main.py#L190-L192
+        torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
+        for p in net.parameters():
+            p.data.add_(p.grad, alpha=-lr)
+
         optimizer.step()
         if not(scheduler is None):
             scheduler.step()
@@ -154,7 +161,7 @@ def train_epoch(
                     max_num_iters_epoch=max_num_iters,
                 )
 
-        if ((save_freq!=(-1)) and (((batch_idx+1) % save_freq) != 0)) or ((batch_idx+1)==max_num_iters):
+        if ((save_freq!=(-1)) and (((batch_idx+1) % save_freq) == 0)) or ((batch_idx+1)==max_num_iters):
             save_checkpoint(
                     args=args,
                     model=net,
@@ -223,11 +230,11 @@ def eval(
             for logit in output_logits:
                 if logit.size(0) < batch_max_target_len:
                     len_diff = batch_max_target_len - logit.size(0)
-                    logit_padding = torch.empty(len_diff, vocab_size)
+                    logit_padding = torch.empty(len_diff, vocab_size).to(device)
                     padded_output_logits.append(torch.vstack((logit, logit_padding)))
                 else:
                     padded_output_logits.append(logit[:batch_max_target_len])
-            padded_output_logits = torch.stack(padded_output_logits, dim=0)
+            padded_output_logits = torch.stack(padded_output_logits, dim=0).permute(0,2,1)
             
             loss = criterion(padded_output_logits, padded_target_summs)
             test_loss.append(loss.item())
@@ -540,6 +547,7 @@ if __name__ == "__main__":
     parser.add_argument('--min-lr', metavar='<RATE>', type=float, help=f'set the minimum learning rate to decay to in cosine annealing learning rate schedule (default: {COSINE_ANNEALING_CONFIG["eta_min"]})', default=COSINE_ANNEALING_CONFIG["eta_min"])
     # Loss and metrics
     parser.add_argument('--smoothing', metavar='<SMOOTHING>', type=float, help=f'set the label smoothing value for CrossEntropyLoss (default: {LABEL_SMOOTHING})', default=LABEL_SMOOTHING)
+    parser.add_argument('--clip', metavar='<VALUE>', type=float, help=f'set the gradient clipping max L2 norm. (default: {GRADIENT_CLIPPING})', default=GRADIENT_CLIPPING)
     parser.add_argument('--rouge-keys', metavar='<ROUGE-KEYS>', type=str, help=f'set the ROUGE keys to use to compute metrics (default: {" ".join(ROUGE_KEYS)})', default=" ".join(ROUGE_KEYS))
     parser.add_argument('-vf','--valid-freq', metavar='<COUNT>', type=int, help=f'set the validation frequency, in iterations. (default: {VALID_FREQ})', default=VALID_FREQ)
     parser.add_argument('-pf','--print-freq', metavar='<COUNT>', type=int, help=f'set the printing frequency, in iterations. (default: {PRINT_FREQ})', default=PRINT_FREQ)
@@ -566,10 +574,10 @@ if __name__ == "__main__":
     parser.add_argument('--model1-max-hypothesis-count', metavar='<COUNT>', type=int, help=f"set Model1 maximum number of hypotheses before terminating beam search. (default: {MODEL1_MAX_HYPOTHESIS_COUNT})", default=MODEL1_MAX_HYPOTHESIS_COUNT)
     parser.add_argument('--model1-teacher-forcing-rate', metavar='<PROB>', type=float, help=f"set Model1 teacher forcing rate. (default: {MODEL1_TEACHER_FORCING_RATE})", default=MODEL1_TEACHER_FORCING_RATE)
     # Save & Loading
-    parser.add_argument('--save', metavar='<SLOT>', type=int, help='save checkpoint to save slot <SLOT> in ./saves/ (default: None)', default=None)
+    parser.add_argument('--save', metavar='<SLOT>', type=int, help='save checkpoint to save slot <SLOT> in ./saves/ (default: 1)', default=1)
     parser.add_argument('--save-freq', metavar='<COUNT>', type=int, help=f'set number of iterations before saving to save slot <SLOT> in ./saves/ (default: {SAVE_FREQ})', default=SAVE_FREQ)
     parser.add_argument('--load', metavar='<NAME>', type=str, help='load checkpoint <NAME> from ./saves/ (default: None)', default=None)
     args = parser.parse_args()
 
-    debug_parser(args)
-    #main(args)
+    # debug_parser(args)
+    main(args)

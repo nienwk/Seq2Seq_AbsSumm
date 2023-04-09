@@ -132,3 +132,4 @@ dmypy.json
 # AI6127 Project
 data/
 *.pth
+saves/

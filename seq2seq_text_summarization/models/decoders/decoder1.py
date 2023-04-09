@@ -41,12 +41,12 @@ class Decoder1(nn.Module):
             )
 
         self.input_feeding_fc = nn.Linear(attentional_fc_out_dim+embedding_dim, embedding_dim)
-        self.input_feeding_fc_dropout = nn.Dropout(d=input_feeding_fc_dropout_p)
+        self.input_feeding_fc_dropout = nn.Dropout(p=input_feeding_fc_dropout_p)
 
         if activation == "gelu":
-            self.activation = F.gelu()
+            self.activation = F.gelu
         elif activation == "relu":
-            self.activation = F.relu()
+            self.activation = F.relu
         else:
             raise NotImplementedError(f"Activation function not supported. Expects 'relu' or 'gelu'. Got {activation}")
 
@@ -101,7 +101,7 @@ class Decoder1(nn.Module):
             embedded = self.input_feeding_fc_dropout(embedded)
             # embedded shape = [batch size, 1, embedding_dim]
         
-        output, (hidden, cell) = self.rnn(embedded, hidden, cell) # prev hidden and cell (forward's inputs) are used directly in multi-layer LSTM according to the paper.
+        output, (hidden, cell) = self.rnn(embedded, (hidden, cell)) # prev hidden and cell (forward's inputs) are used directly in multi-layer LSTM according to the paper.
         # output shape = [batch size, 1, hidden_dim]
         # hidden shape = [num_layers, batch size, hidden_dim]
         # cell shape = [num_layers, batch size, hidden_dim]

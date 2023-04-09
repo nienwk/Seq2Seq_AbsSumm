@@ -50,6 +50,7 @@ class Model1(nn.Module):
         self.decoder_num_layers = decoder_num_layers
         self.start_of_summ_index = start_of_summ_index
         self.end_of_summ_index = end_of_summ_index
+        self.decoder_attentional_fc_out_dim = decoder_attentional_fc_out_dim
         self.beam_search_k = beam_search_k
         self.generation_limit = generation_limit
         self.hypothesis_limit = hypothesis_limit
@@ -83,7 +84,9 @@ class Model1(nn.Module):
             attentional_fc_out_dim=decoder_attentional_fc_out_dim
         )
 
-        self.softmax = nn.LogSoftmax(vocab_size, dim=2)
+        self.softmax = nn.LogSoftmax(dim=2)
+
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def forward(self, text_packed_seq: PackedSequence):
         r"""Returns best sequence decoding (with beam search) for each batch item, and the relevant logits used to compute each word token index
@@ -111,7 +114,7 @@ class Model1(nn.Module):
         batch_max_input_seq_len = max(input_seq_lengths).long().item()
 
         # Compute attention mask for parallel compute of attention across original batch
-        attention_key_padding_mask = compute_attention_key_padding_mask(input_seq_lengths)
+        attention_key_padding_mask = compute_attention_key_padding_mask(input_seq_lengths).to(self.device)
         # attention_key_padding_mask shape = [batch size, max input seq len]
 
         # ---------------------------------------------------------
@@ -121,7 +124,7 @@ class Model1(nn.Module):
         # ---------------------------------------------------------
         # Prepare start tokens by stacking appropriately
         # ---------------------------------------------------------
-        decoder_input_embedded = (torch.ones(N,1) * self.start_of_summ_index).long()
+        decoder_input_embedded = (torch.ones(N,1) * self.start_of_summ_index).long().to(self.device)
         # decoder_input_embedded shape = [batch size, 1]
 
         # ---------------------------------------------------------
@@ -136,7 +139,14 @@ class Model1(nn.Module):
         # ---------------------------------------------------------
         decoding_timestep = 1 # used to force terminate all decoding (regardless of batch index number) when decoding_timestep hits self.generation_limit
 
-        hidden, cell, attn_output_weights, attentional_vectors, logits = self.decoder(decoder_input_embedded, decoder_initial_hidden, decoder_initial_cell, padded_encoder_outputs, attention_key_padding_mask)
+        hidden, cell, attn_output_weights, attentional_vectors, logits = self.decoder(\
+            embedded=decoder_input_embedded,
+            hidden=decoder_initial_hidden,
+            cell=decoder_initial_cell,
+            padded_encoder_outputs=padded_encoder_outputs,
+            attention_key_padding_masks=attention_key_padding_mask,
+            # prev_attentional_vectors=None,
+        )
         # hidden shape = [num_layers, N, decoder_hidden_dim]
         # cell shape = [num_layers, N, decoder_hidden_dim]
         # attn_output_weights shape = [N, 1, max_source_seq_len]
@@ -158,14 +168,14 @@ class Model1(nn.Module):
 
         # iterate through row wise, to build GeneratedWords. Generate self.beam_search_k words for each of N logits.
         for batch_idx, (h, c, aw, av, l, lp, i) in enumerate(zip(hidden.permute(1,0,2), cell.permute(1,0,2), attn_output_weights, attentional_vectors, logits, topk_log_prob, topk_idx)): # permute shenanigans for hidden and cell due to iterating by batch size dimension
-            h = h.permute(1,0,2)
-            c = c.permute(1,0,2)
-            for log_prob, idx in zip(lp.squeeze(), i.squeeze()): # has self.beam_search_k iterations here
+            h = h.unsqueeze(0).permute(1,0,2)
+            c = c.unsqueeze(0).permute(1,0,2)
+            for log_prob, idx in zip(lp.squeeze(0), i.squeeze(0)): # has self.beam_search_k iterations here
                 # log_prob is a singleton Tensor, idx is a singleton LongTensor
                 if idx==self.end_of_summ_index:
-                    completed_hypotheses[batch_idx].append(GeneratedWord(None, idx, l, log_prob, h, c, av, aw, batch_idx, input_seq_lengths[batch_idx], padded_encoder_outputs[batch_idx], attention_key_padding_mask[batch_idx]))
+                    completed_hypotheses[batch_idx].append(GeneratedWord(None, idx, l.unsqueeze(0), log_prob, h, c, av.unsqueeze(0), aw.unsqueeze(0), batch_idx, input_seq_lengths[batch_idx], padded_encoder_outputs[batch_idx].unsqueeze(0), attention_key_padding_mask[batch_idx].unsqueeze(0)))
                 else:
-                    stack_of_hypotheses[batch_idx].append(GeneratedWord(None, idx, l, log_prob, h, c, av, aw, batch_idx, input_seq_lengths[batch_idx], padded_encoder_outputs[batch_idx], attention_key_padding_mask[batch_idx]))
+                    stack_of_hypotheses[batch_idx].append(GeneratedWord(None, idx, l.unsqueeze(0), log_prob, h, c, av.unsqueeze(0), aw.unsqueeze(0), batch_idx, input_seq_lengths[batch_idx], padded_encoder_outputs[batch_idx].unsqueeze(0), attention_key_padding_mask[batch_idx].unsqueeze(0)))
         
         # For first round, we dont need to choose top-k again amongst stack_of_hypotheses
         remaining_stack_of_hypotheses = stack_of_hypotheses
@@ -208,11 +218,12 @@ class Model1(nn.Module):
             # Stack all the decoder input stuff accordingly.
             # ---------------------------------------------------------
             # Prepare dummy decoder input stuff to use with torch.vstack in for loops.
-            stacked_vocab = torch.empty(1, self.padding_index)
-            stacked_hidden = torch.empty(1, self.decoder_num_layers, self.decoder_hidden_dim)
-            stacked_cell = torch.empty(1, self.decoder_num_layers, self.decoder_hidden_dim)
-            stacked_padded_encoder_output = torch.empty(1, batch_max_input_seq_len, self.decoder_hidden_dim)
-            stacked_attention_key_padding_mask = torch.empty(1, batch_max_input_seq_len)
+            stacked_vocab = torch.zeros(1, 1).to(self.device)
+            stacked_hidden = torch.zeros(1, self.decoder_num_layers, self.decoder_hidden_dim).to(self.device)
+            stacked_cell = torch.zeros(1, self.decoder_num_layers, self.decoder_hidden_dim).to(self.device)
+            stacked_padded_encoder_output = torch.zeros(1, batch_max_input_seq_len, self.decoder_hidden_dim).to(self.device)
+            stacked_attention_key_padding_mask = torch.zeros(1, batch_max_input_seq_len).to(self.device)
+            stacked_attentional_vectors = torch.zeros(1,1, self.decoder_attentional_fc_out_dim).to(self.device)
 
             num_hypothesis_in_stack = [0] * len_batch_items_left
 
@@ -223,6 +234,7 @@ class Model1(nn.Module):
                     stacked_cell = torch.vstack((stacked_cell, hypothesis.cell.permute(1,0,2))) 
                     stacked_padded_encoder_output = torch.vstack((stacked_padded_encoder_output, hypothesis.padded_encoder_output))
                     stacked_attention_key_padding_mask = torch.vstack((stacked_attention_key_padding_mask, hypothesis.attention_key_padding_mask))
+                    stacked_attentional_vectors = torch.vstack((stacked_attentional_vectors, hypothesis.attentional_vector))
                     num_hypothesis_in_stack[i] += 1
             
             cum_num_hypothesis_in_stack = np.cumsum(np.array([0]+num_hypothesis_in_stack)) # will look like [0, x, x+y, ...]
@@ -233,18 +245,19 @@ class Model1(nn.Module):
             stacked_cell = stacked_cell[1:].permute(1,0,2) # shape = [decoder_num_layers, O(n*kk_n), decoder_hidden_dim]
             stacked_padded_encoder_output = stacked_padded_encoder_output[1:] # shape = [O(n*kk_n), batch_max_input_seq_len, decoder_hidden_dim]
             stacked_attention_key_padding_mask = stacked_attention_key_padding_mask[1:] # shape = [O(n*kk_n), batch_max_input_seq_len]
+            stacked_attentional_vectors = stacked_attentional_vectors[1:] # shape [O(n*kk_n), 1, decoder_attentional_fc_out_dim]
 
             # ---------------------------------------------------------
             # (Embed -> dropout) all vocab_idx to get embedded.
             # ---------------------------------------------------------
-            decoder_input_embedded = stacked_vocab
+            decoder_input_embedded = stacked_vocab.long()
             decoder_input_embedded = self.embedding_layer(decoder_input_embedded)
             decoder_input_embedded = self.embedding_dropout(decoder_input_embedded)
 
             # ---------------------------------------------------------
             # Push stack of O(n*kk_n) augmented_batch into decoder
             # ---------------------------------------------------------
-            hidden, cell, attn_output_weights, attentional_vectors, logits = self.decoder(decoder_input_embedded, stacked_hidden, stacked_cell, stacked_padded_encoder_output, stacked_attention_key_padding_mask)
+            hidden, cell, attn_output_weights, attentional_vectors, logits = self.decoder(embedded=decoder_input_embedded, hidden=stacked_hidden.contiguous(), cell=stacked_cell.contiguous(), padded_encoder_outputs=stacked_padded_encoder_output, attention_key_padding_masks=stacked_attention_key_padding_mask, prev_attentional_vectors=stacked_attentional_vectors)
 
             topk_log_prob, topk_idx = self.softmax(logits).topk(self.beam_search_k, dim=2)
 
@@ -254,13 +267,13 @@ class Model1(nn.Module):
             # ---------------------------------------------------------
             tmp_decoder_output_holder = [[] for _ in range(len_batch_items_left)]
             for i in range(len_batch_items_left):
-                tmp_decoder_output_holder.append(hidden.permute(1,0,2)[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
-                tmp_decoder_output_holder.append(cell.permute(1,0,2)[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
-                tmp_decoder_output_holder.append(attn_output_weights[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
-                tmp_decoder_output_holder.append(attentional_vectors[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
-                tmp_decoder_output_holder.append(logits[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
-                tmp_decoder_output_holder.append(topk_log_prob[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
-                tmp_decoder_output_holder.append(topk_idx[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
+                tmp_decoder_output_holder[i].append(hidden.permute(1,0,2)[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
+                tmp_decoder_output_holder[i].append(cell.permute(1,0,2)[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
+                tmp_decoder_output_holder[i].append(attn_output_weights[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
+                tmp_decoder_output_holder[i].append(attentional_vectors[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
+                tmp_decoder_output_holder[i].append(logits[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
+                tmp_decoder_output_holder[i].append(topk_log_prob[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
+                tmp_decoder_output_holder[i].append(topk_idx[cum_num_hypothesis_in_stack[i]:cum_num_hypothesis_in_stack[i+1]])
 
             # ---------------------------------------------------------
             # For each O(n*kk_n) logit, do k-beam search, make `GeneratedWord`,
@@ -271,14 +284,14 @@ class Model1(nn.Module):
             for i, batch_idx in enumerate(batch_items_left): # iterating through batch item n
                 h_b, c_b, aw_b, av_b, l_b, lp_b, i_b = tmp_decoder_output_holder[i]
                 for j, (h, c, aw, av, l, lp, i) in enumerate(zip(h_b, c_b, aw_b, av_b, l_b, lp_b, i_b)): # iterating through remaining hypothesis kk_n
-                    h = h.permute(1,0,2)
-                    c = c.permute(1,0,2)
-                    for log_prob, idx in zip(lp.squeeze(), i.squeeze()): # has self.beam_search_k iterations here
+                    h = h.unsqueeze(0).permute(1,0,2)
+                    c = c.unsqueeze(0).permute(1,0,2)
+                    for log_prob, idx in zip(lp.squeeze(0), i.squeeze(0)): # has self.beam_search_k iterations here
                         # log_prob is a singleton Tensor, idx is a singleton LongTensor
                         if idx==self.end_of_summ_index:
-                            completed_hypotheses[batch_idx].append(GeneratedWord(remaining_stack_of_hypotheses[batch_idx][j], idx, l, log_prob, h, c, av, aw))
+                            completed_hypotheses[batch_idx].append(GeneratedWord(remaining_stack_of_hypotheses[batch_idx][j], idx, l.unsqueeze(0), log_prob, h, c, av.unsqueeze(0), aw.unsqueeze(0)))
                         else:
-                            stack_of_hypotheses[batch_idx].append(GeneratedWord(remaining_stack_of_hypotheses[batch_idx][j], idx, l, log_prob, h, c, av, aw))
+                            stack_of_hypotheses[batch_idx].append(GeneratedWord(remaining_stack_of_hypotheses[batch_idx][j], idx, l.unsqueeze(0), log_prob, h, c, av.unsqueeze(0), aw.unsqueeze(0)))
 
             # ---------------------------------------------------------
             # For each n, filter stack_of_hypotheses[n] to top-k hypothesis,

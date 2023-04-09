@@ -15,7 +15,7 @@ def setup_metrics_dict(rouge_keys:Tuple[str]):
 def compute_metrics(metrics_dict:dict[str,list], vocabulary:Vocab, rouge_computer:ROUGEScore, output_seq_list:list[list], packed_target_summ:PackedSequence):
     """Directly appends computed metrics to `metrics_dict`'s lists."""
     tmp_summ = unpack_sequence(packed_target_summ)
-    tmp_summ = list(map(lambda x: " ".join(vocabulary.lookup_tokens(x.tolist())), tmp_summ))
+    tmp_summ = list(map(lambda x: " ".join(vocabulary.lookup_tokens(x.long().tolist())), tmp_summ))
     tmp_output = list(map(lambda x: " ".join(vocabulary.lookup_tokens(x)), output_seq_list))
     tmp_rogue = rouge_computer(tmp_output, tmp_summ)
     for metric, l in metrics_dict.items():

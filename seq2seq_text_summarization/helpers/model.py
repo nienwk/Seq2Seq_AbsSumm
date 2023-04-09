@@ -22,7 +22,7 @@ def compute_attention_key_padding_mask(sequence_lengths:Tensor) -> Tensor:
     
     Will convert sequence_lengths to dtype int32."""
     integer_seq_len = sequence_lengths.int() # conversion
-    attention_mask = ones(len(integer_seq_len), max(integer_seq_len).item()) * float("-inf")
+    attention_mask = ones(len(integer_seq_len), max(integer_seq_len).item()) * 1e-9
     # NOTE len(integer_seq_len) is essentially the batch size, max(integer_seq_len).item() is the longest sequence length in the batch.
     # attention mask shape = [batch size, longest seq len]
     for batch_idx, seq in enumerate(attention_mask):
