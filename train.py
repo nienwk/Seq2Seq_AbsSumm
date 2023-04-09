@@ -20,7 +20,8 @@ from seq2seq_text_summarization.helpers.save_utility import save_checkpoint
 from seq2seq_text_summarization.helpers.rng import generator_obj_seed
 
 from seq2seq_text_summarization.configs.data_prep_configs import POSTPROCESSING_DIR, TRAIN_CSV, VAL_CSV
-from seq2seq_text_summarization.configs.dataloader_configs import TRAIN_BATCH_SIZE, VAL_BATCH_SIZE, NUM_WORKERS, BUCKET_MULTIPLIER, TOKENIZER, LANGUAGE, PAD_TOKEN, END_TOKEN, VOCAB_DIR, SOURCE_VOCAB_EXPORT, TARGET_VOCAB_EXPORT
+from seq2seq_text_summarization.configs.dataloader_configs import TRAIN_BATCH_SIZE, VAL_BATCH_SIZE, NUM_WORKERS, BUCKET_MULTIPLIER, TOKENIZER, LANGUAGE, PAD_TOKEN, START_TOKEN, END_TOKEN, VOCAB_DIR, SOURCE_VOCAB_EXPORT, TARGET_VOCAB_EXPORT
+from seq2seq_text_summarization.configs.model_configs import MODEL1_NAME, MODEL1_ACTIVATION, MODEL1_EMBEDDING_DIM, MODEL1_EMBEDDING_DROPOUT_P, MODEL1_ENCODER_HIDDEN_DIM, MODEL1_ENCODER_NUM_LAYERS, MODEL1_ENCODER_RNN_DROPOUT_P, MODEL1_ENCODER_FC_DROPOUT_P, MODEL1_ENCODER_BIDIRECTIONAL, MODEL1_DECODER_HIDDEN_DIM, MODEL1_DECODER_NUM_LAYERS, MODEL1_DECODER_RNN_DROPOUT_P, MODEL1_DECODER_NUM_ATTENTION_HEAD, MODEL1_DECODER_ATTENTION_DROPOUT_P, MODEL1_DECODER_INPUT_FEEDING_FC_DROPOUT_P, MODEL1_DECODER_ATTENTIONAL_FC_OUT_DIM, MODEL1_BEAM_SEARCH_K, MODEL1_GENERATION_LIMIT, MODEL1_MAX_HYPOTHESIS_COUNT, MODEL1_TEACHER_FORCING_RATE
 from seq2seq_text_summarization.configs.loss_configs import LABEL_SMOOTHING
 from seq2seq_text_summarization.configs.optimizer_configs import OPTIMIZER, INITIAL_LEARNING_RATE, WEIGHT_DECAY, SGD_CONFIG, ADAM_CONFIG
 from seq2seq_text_summarization.configs.scheduler_configs import MILESTONE_RATIO, MILESTONE_HARD, LINEAR_LR_CONFIG, COSINE_ANNEALING_CONFIG
@@ -61,11 +62,13 @@ def train_epoch(
     ) -> Tuple[list[float], list[float], dict[str, list[float]], dict[str, list[float]]]:
 
     rouge=ROUGEScore(rouge_keys=rouge_keys)
+    vocab_size = len(vocabulary)
+
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if verbose:
         print('Epoch: %d' % epoch_count)
 
-    best_val_loss = min(val_loss) if (val_loss!=[]) else 1e9
+    best_val_loss = min(val_loss) if (val_loss!=[]) else float("inf")
 
     max_num_iters = len(trainloader)
 
@@ -85,17 +88,28 @@ def train_epoch(
         # and each inner list contains the token indices (must be passable into vocabulary.lookup_tokens() method)
         # of an output sequence.
         # output_logits should be a list of batch_size Tensors of shape = (seq_len, vocab_size)
-        output_seq, output_logits = net(text)
+        # We ignore attn_weights in training and eval
+        output_seq, output_logits, _ = net(text)
 
         # pad the packed sequence, retrieve the Tensor
         padded_target_summs, target_lengths = pad_packed_sequence(summ, batch_first=True, padding_value=0)
         # padded_target_summs = (batch_size, longest_seq_len)
+        # target_lengths shape = [seq len of batch item 1, seq len of batch item 2, ..., seq len of batch item N]
         padded_target_summs = padded_target_summs.long() # convert to long for criterion computation
 
-        # TODO: trim or pad output_logits to fit, using target_lengths
-        output_logits =
-
-        loss = criterion(output_logits, padded_target_summs)
+        batch_max_target_len = max(target_lengths).item()
+        padded_output_logits = []
+        
+        for logit in output_logits:
+            if logit.size(0) < batch_max_target_len:
+                len_diff = batch_max_target_len - logit.size(0)
+                logit_padding = torch.empty(len_diff, vocab_size)
+                padded_output_logits.append(torch.vstack((logit, logit_padding)))
+            else:
+                padded_output_logits.append(logit[:batch_max_target_len])
+        padded_output_logits = torch.stack(padded_output_logits, dim=0)
+        
+        loss = criterion(padded_output_logits, padded_target_summs)
         loss.backward()
         optimizer.step()
         if not(scheduler is None):
@@ -113,7 +127,7 @@ def train_epoch(
 
         
         if (((batch_idx+1) % val_freq) == 0) or ((batch_idx+1)==max_num_iters):
-            eval_loss, eval_metrics = eval(epoch_count, batch_idx+1, max_num_iters, net, criterion, validloader, vocabulary, verbose, rouge, rouge_keys)
+            eval_loss, eval_metrics = eval(epoch_count, batch_idx+1, max_num_iters, net, criterion, validloader, vocabulary, vocab_size, verbose, rouge, rouge_keys)
             val_loss.append(eval_loss)
             val_metrics = append_metrics(eval_metrics, val_metrics)
             if verbose:
@@ -171,6 +185,7 @@ def eval(
     criterion: nn.CrossEntropyLoss,
     testloader: DataLoader,
     vocabulary: Vocab,
+    vocab_size: int,
     verbose: bool,
     rouge: ROUGEScore,
     rouge_keys: Tuple,
@@ -194,17 +209,27 @@ def eval(
             # and each inner list contains the token indices (must be passable into vocabulary.lookup_tokens() method)
             # of an output sequence.
             # output_logits should be a list of batch_size Tensors of shape = (seq_len, vocab_size)
-            output_seq, output_logits = net(text)
+            # We ignore attn_weights in training and eval
+            output_seq, output_logits, _ = net(text)
 
             # pad the packed sequence, retrieve the Tensor
             padded_target_summs, target_lengths = pad_packed_sequence(summ, batch_first=True, padding_value=0)
             # padded_target_summs = (batch_size, longest_seq_len)
             padded_target_summs = padded_target_summs.long() # convert to long for criterion computation
 
-            # TODO: trim or pad output_logits to fit, using target_lengths
-            output_logits =
-
-            loss = criterion(output_logits, padded_target_summs)
+            batch_max_target_len = max(target_lengths).item()
+            padded_output_logits = []
+            
+            for logit in output_logits:
+                if logit.size(0) < batch_max_target_len:
+                    len_diff = batch_max_target_len - logit.size(0)
+                    logit_padding = torch.empty(len_diff, vocab_size)
+                    padded_output_logits.append(torch.vstack((logit, logit_padding)))
+                else:
+                    padded_output_logits.append(logit[:batch_max_target_len])
+            padded_output_logits = torch.stack(padded_output_logits, dim=0)
+            
+            loss = criterion(padded_output_logits, padded_target_summs)
             test_loss.append(loss.item())
 
             # Compute metrics via helper function
@@ -269,9 +294,33 @@ def main(args):
         
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        # TODO Load previous model state, i.e. parameters
-        if args.model == "model1":
-            net = Model1(Encoder1(), Decoder1()).to(device)
+        # Load previous model state, i.e. parameters
+        if args.model == MODEL1_NAME:
+            net = Model1(
+                vocab_size=len(vocabulary),
+                padding_index=vocabulary([args.pad_token])[0],
+                start_of_summ_index=vocabulary([args.start_token])[0],
+                end_of_summ_index=vocabulary([args.end_token])[0],
+                activation=args.model1_activation,
+                embedding_dim=args.model1_embedding_dim,
+                embedding_dropout_p=args.model1_embedding_dropout_p,
+                encoder_hidden_dim=args.model1_encoder_hidden_dim,
+                encoder_num_layers=args.model1_encoder_num_layers,
+                encoder_rnn_dropout_p=args.model1_encoder_rnn_dropout_p,
+                encoder_fc_dropout_p=args.model1_encoder_fc_dropout_p,
+                bidirectional_encoder=args.model1_encoder_bidirectional,
+                decoder_hidden_dim=args.model1_decoder_hidden_dim,
+                decoder_num_layers=args.model1_decoder_num_layers,
+                decoder_rnn_dropout_p=args.model1_decoder_rnn_dropout_p,
+                decoder_num_attention_head=args.model1_decoder_num_attention_head,
+                decoder_attention_dropout_p=args.model1_decoder_attention_dropout_p,
+                decoder_input_feeding_fc_dropout_p=args.model1_decoder_input_feeding_fc_dropout_p,
+                decoder_attentional_fc_out_dim=args.model1_decoder_attentional_fc_out_dim,
+                beam_search_k=args.model1_beam_search_k,
+                generation_limit=args.model1_generation_limit,
+                hypothesis_limit=args.model1_max_hypothesis_count,
+                teacher_forcing_ratio=args.model1_teacher_forcing_rate
+            ).to(device)
             net.load_state_dict(checkpoint['model_state_dict'])
         else:
             raise NotImplementedError(f"model is not implemented! Got model name {args.model}")
@@ -349,9 +398,33 @@ def main(args):
 
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        # TODO Setup model
-        if args.model == "model1":
-            net = Model1(Encoder1(), Decoder1()).to(device)
+        # Setup model
+        if args.model == MODEL1_NAME:
+            net = Model1(
+                vocab_size=len(vocabulary),
+                padding_index=vocabulary([args.pad_token])[0],
+                start_of_summ_index=vocabulary([args.start_token])[0],
+                end_of_summ_index=vocabulary([args.end_token])[0],
+                activation=args.model1_activation,
+                embedding_dim=args.model1_embedding_dim,
+                embedding_dropout_p=args.model1_embedding_dropout_p,
+                encoder_hidden_dim=args.model1_encoder_hidden_dim,
+                encoder_num_layers=args.model1_encoder_num_layers,
+                encoder_rnn_dropout_p=args.model1_encoder_rnn_dropout_p,
+                encoder_fc_dropout_p=args.model1_encoder_fc_dropout_p,
+                bidirectional_encoder=args.model1_encoder_bidirectional,
+                decoder_hidden_dim=args.model1_decoder_hidden_dim,
+                decoder_num_layers=args.model1_decoder_num_layers,
+                decoder_rnn_dropout_p=args.model1_decoder_rnn_dropout_p,
+                decoder_num_attention_head=args.model1_decoder_num_attention_head,
+                decoder_attention_dropout_p=args.model1_decoder_attention_dropout_p,
+                decoder_input_feeding_fc_dropout_p=args.model1_decoder_input_feeding_fc_dropout_p,
+                decoder_attentional_fc_out_dim=args.model1_decoder_attentional_fc_out_dim,
+                beam_search_k=args.model1_beam_search_k,
+                generation_limit=args.model1_generation_limit,
+                hypothesis_limit=args.model1_max_hypothesis_count,
+                teacher_forcing_ratio=args.model1_teacher_forcing_rate
+            ).to(device)
         else:
             raise NotImplementedError(f"model is not implemented! Got model name {args.model}")
 
@@ -441,6 +514,7 @@ if __name__ == "__main__":
     parser.add_argument('-t', '--tokenizer', metavar='<NAME>', type=str, help=f'choice of tokenizer (default: {TOKENIZER})', default=TOKENIZER)
     parser.add_argument('-l', '--language', metavar='<NAME>', type=str, help=f'choice of language (default: {LANGUAGE})', default=LANGUAGE)
     parser.add_argument('--pad-token', metavar='<NAME>', type=str, help=f'choice of pad token (default: {PAD_TOKEN})', default=PAD_TOKEN)
+    parser.add_argument('--start-token', metavar='<NAME>', type=str, help=f'choice of start token (default: {START_TOKEN})', default=START_TOKEN)
     parser.add_argument('--end-token', metavar='<NAME>', type=str, help=f'choice of end token (default: {END_TOKEN})', default=END_TOKEN)
     # Dataloader
     parser.add_argument('--num-workers', metavar='<COUNT>', type=int, help=f'set the number of processes for data loading multiprocessing (default: {NUM_WORKERS})', default=NUM_WORKERS)
@@ -470,8 +544,27 @@ if __name__ == "__main__":
     parser.add_argument('-vf','--valid-freq', metavar='<COUNT>', type=int, help=f'set the validation frequency, in iterations. (default: {VALID_FREQ})', default=VALID_FREQ)
     parser.add_argument('-pf','--print-freq', metavar='<COUNT>', type=int, help=f'set the printing frequency, in iterations. (default: {PRINT_FREQ})', default=PRINT_FREQ)
     # Model
-    # TODO change to a default baseline model
-    parser.add_argument('-n', '--model', metavar='<NAME>', type=str, help='use model with name. (default: None)', default=None)
+    parser.add_argument('-n', '--model', metavar='<NAME>', type=str, help=f'use model with name. (default: {MODEL1_NAME})', default=MODEL1_NAME)
+    # Model1 hyper-parameters
+    parser.add_argument('--model1-activation', metavar='<NAME>', type=str, help=f"choose Model1 activation function. Only supports 'gelu' and 'relu'. (default: {MODEL1_ACTIVATION})", default=MODEL1_ACTIVATION)
+    parser.add_argument('--model1-embedding-dim', metavar='<COUNT>', type=int, help=f"set Model1 embedding dimension. (default: {MODEL1_EMBEDDING_DIM})", default=MODEL1_EMBEDDING_DIM)
+    parser.add_argument('--model1-embedding-dropout-p', metavar='<PROB>', type=float, help=f"set Model1 embedding layer dropout probability. (default: {MODEL1_EMBEDDING_DROPOUT_P})", default=MODEL1_EMBEDDING_DROPOUT_P)
+    parser.add_argument('--model1-encoder-hidden-dim', metavar='<COUNT>', type=int, help=f"set Model1 encoder LSTM hidden dimension. (default: {MODEL1_ENCODER_HIDDEN_DIM})", default=MODEL1_ENCODER_HIDDEN_DIM)
+    parser.add_argument('--model1-encoder-num-layers', metavar='<COUNT>', type=int, help=f"set Model1 encoder LSTM number of layers. (default: {MODEL1_ENCODER_NUM_LAYERS})", default=MODEL1_ENCODER_NUM_LAYERS)
+    parser.add_argument('--model1-encoder-rnn-dropout-p', metavar='<PROB>', type=float, help=f"set Model1 encoder LSTM dropout probability. (default: {MODEL1_ENCODER_RNN_DROPOUT_P})", default=MODEL1_ENCODER_RNN_DROPOUT_P)
+    parser.add_argument('--model1-encoder-fc-dropout-p', metavar='<PROB>', type=float, help=f"set Model1 encoder fully connected layer dropout probability. (default: {MODEL1_ENCODER_FC_DROPOUT_P})", default=MODEL1_ENCODER_FC_DROPOUT_P)
+    parser.add_argument('--model1-encoder-bidirectional', action=argparse.BooleanOptionalAction, help=f"select if Model1 encoder LSTM is bidirectional.", default=MODEL1_ENCODER_BIDIRECTIONAL)
+    parser.add_argument('--model1-decoder-hidden-dim', metavar='<COUNT>', type=int, help=f"set Model1 decoder LSTM hidden dimension. (default: {MODEL1_DECODER_HIDDEN_DIM})", default=MODEL1_DECODER_HIDDEN_DIM)
+    parser.add_argument('--model1-decoder-num-layers', metavar='<COUNT>', type=int, help=f"set Model1 decoder LSTM number of layers. Must match encoder LSTM number of layers. (default: {MODEL1_DECODER_NUM_LAYERS})", default=MODEL1_DECODER_NUM_LAYERS)
+    parser.add_argument('--model1-decoder-rnn-dropout-p', metavar='<PROB>', type=float, help=f"set Model1 decoder LSTM dropout probability. (default: {MODEL1_DECODER_RNN_DROPOUT_P})", default=MODEL1_DECODER_RNN_DROPOUT_P)
+    parser.add_argument('--model1-decoder-num-attention-head', metavar='<COUNT>', type=int, help=f"set Model1 decoder number of attention heads in MultiHeadAttention layer. (default: {MODEL1_DECODER_NUM_ATTENTION_HEAD})", default=MODEL1_DECODER_NUM_ATTENTION_HEAD)
+    parser.add_argument('--model1-decoder-attention-dropout-p', metavar='<PROB>', type=float, help=f"set Model1 decoder attention layer dropout probability. (default: {MODEL1_DECODER_ATTENTION_DROPOUT_P})", default=MODEL1_DECODER_ATTENTION_DROPOUT_P)
+    parser.add_argument('--model1-decoder-input-feeding-fc-dropout_p', metavar='<PROB>', type=float, help=f"set Model1 decoder's input feeding fully connected layer's dropout probability. (default: {MODEL1_DECODER_INPUT_FEEDING_FC_DROPOUT_P})", default=MODEL1_DECODER_INPUT_FEEDING_FC_DROPOUT_P)
+    parser.add_argument('--model1-decoder-attentional-fc-out-dim', metavar='<COUNT>', type=int, help=f"set Model1 decoder attentional fully connected layer's output dimension. (default: {MODEL1_DECODER_ATTENTIONAL_FC_OUT_DIM})", default=MODEL1_DECODER_ATTENTIONAL_FC_OUT_DIM)
+    parser.add_argument('--model1-beam-search-k', metavar='<COUNT>', type=int, help=f"set Model1 beam search k. (default: {MODEL1_BEAM_SEARCH_K})", default=MODEL1_BEAM_SEARCH_K)
+    parser.add_argument('--model1-generation-limit', metavar='<COUNT>', type=int, help=f"set Model1 maximum generated sequence length. (default: {MODEL1_GENERATION_LIMIT})", default=MODEL1_GENERATION_LIMIT)
+    parser.add_argument('--model1-max-hypothesis-count', metavar='<COUNT>', type=int, help=f"set Model1 maximum number of hypotheses before terminating beam search. (default: {MODEL1_MAX_HYPOTHESIS_COUNT})", default=MODEL1_MAX_HYPOTHESIS_COUNT)
+    parser.add_argument('--model1-teacher-forcing-rate', metavar='<PROB>', type=float, help=f"set Model1 teacher forcing rate. (default: {MODEL1_TEACHER_FORCING_RATE})", default=MODEL1_TEACHER_FORCING_RATE)
     # Save & Loading
     parser.add_argument('--save', metavar='<SLOT>', type=int, help='save checkpoint to save slot <SLOT> in ./saves/ (default: None)', default=None)
     parser.add_argument('--save-freq', metavar='<COUNT>', type=int, help=f'set number of iterations before saving to save slot <SLOT> in ./saves/ (default: {SAVE_FREQ})', default=SAVE_FREQ)

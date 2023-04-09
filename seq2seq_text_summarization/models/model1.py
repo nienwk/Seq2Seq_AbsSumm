@@ -41,9 +41,9 @@ class Model1(nn.Module):
         ) -> None:
         super(Model1,self).__init__()
 
-        # NOTE to implementer: May be useful to keep the following. Remove these if not needed in forward.
-        self.vocab_size = vocab_size
-        
+        if encoder_num_layers != decoder_num_layers:
+            raise ValueError(f"Number of layers of encoder and decoder must match. Got ENC:{encoder_num_layers}, DEC:{decoder_num_layers}")
+
         # Important stuff to keep for forward
         self.padding_index = padding_index
         self.decoder_hidden_dim = decoder_hidden_dim
