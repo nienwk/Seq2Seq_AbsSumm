@@ -10,6 +10,7 @@ class AmazonFineFoodDataset(Dataset):
         self,
         tokenizer, # Should not be inputting spacy.load() directly. Use `setup_tokenizer()` in `dataloaders.vocab.py`
         vocabulary: Vocab,
+        end_token_idx: list[int],
         file_path: Union[str, PathLike],
         text_col_name: str = FIELDNAME_CLEANED_TEXT,
         summ_col_name: str = FIELDNAME_CLEANED_SUMMARY,
@@ -18,6 +19,7 @@ class AmazonFineFoodDataset(Dataset):
         ) -> None:
         self.tokenizer = tokenizer
         self.vocabulary = vocabulary
+        self.end_token_idx = end_token_idx
         self.text_col_name = text_col_name
         self.summ_col_name = summ_col_name
         self.input_len_col_name = input_len_col_name
@@ -30,7 +32,7 @@ class AmazonFineFoodDataset(Dataset):
     def __getitem__(self, index):
         row = self.data.iloc[index]
         review, summary = row[self.text_col_name], row[self.summ_col_name]
-        review, summary = self.vocabulary(self.tokenizer(review)), self.vocabulary(self.tokenizer(summary))
+        review, summary = self.vocabulary(self.tokenizer(review)), self.vocabulary(self.tokenizer(summary))+self.end_token_idx # append END TOKEN here
         return review, summary
     
     def get_seq_len(self):

@@ -20,7 +20,7 @@ from seq2seq_text_summarization.helpers.save_utility import save_checkpoint
 from seq2seq_text_summarization.helpers.rng import generator_obj_seed
 
 from seq2seq_text_summarization.configs.data_prep_configs import POSTPROCESSING_DIR, TRAIN_CSV, VAL_CSV
-from seq2seq_text_summarization.configs.dataloader_configs import TRAIN_BATCH_SIZE, VAL_BATCH_SIZE, NUM_WORKERS, BUCKET_MULTIPLIER, TOKENIZER, LANGUAGE, PAD_TOKEN, VOCAB_DIR, SOURCE_VOCAB_EXPORT, TARGET_VOCAB_EXPORT
+from seq2seq_text_summarization.configs.dataloader_configs import TRAIN_BATCH_SIZE, VAL_BATCH_SIZE, NUM_WORKERS, BUCKET_MULTIPLIER, TOKENIZER, LANGUAGE, PAD_TOKEN, END_TOKEN, VOCAB_DIR, SOURCE_VOCAB_EXPORT, TARGET_VOCAB_EXPORT
 from seq2seq_text_summarization.configs.loss_configs import LABEL_SMOOTHING
 from seq2seq_text_summarization.configs.optimizer_configs import OPTIMIZER, INITIAL_LEARNING_RATE, WEIGHT_DECAY, SGD_CONFIG, ADAM_CONFIG
 from seq2seq_text_summarization.configs.scheduler_configs import MILESTONE_RATIO, MILESTONE_HARD, LINEAR_LR_CONFIG, COSINE_ANNEALING_CONFIG
@@ -247,8 +247,8 @@ def main(args):
             raise NotImplementedError("Separated vocabulary is not supported.")
 
         # Import datasets
-        train_dataset = AmazonFineFoodDataset(tokenizer, vocabulary, args.train_data_path) # assumes the names of columns are correct. Possible to break here!
-        valid_dataset = AmazonFineFoodDataset(tokenizer, vocabulary, args.valid_data_path) # assumes the names of columns are correct. Possible to break here!
+        train_dataset = AmazonFineFoodDataset(tokenizer, vocabulary, vocabulary([args.end_token]), args.train_data_path) # assumes the names of columns are correct. Possible to break here!
+        valid_dataset = AmazonFineFoodDataset(tokenizer, vocabulary, vocabulary([args.end_token]), args.valid_data_path) # assumes the names of columns are correct. Possible to break here!
 
         # Set the trainloader generator's seed
         trainloader_generator = torch.Generator().set_state(checkpoint['trainloader_seed'])
@@ -330,8 +330,8 @@ def main(args):
             raise NotImplementedError("Separated vocabulary is not supported.")
 
         # Import datasets
-        train_dataset = AmazonFineFoodDataset(tokenizer, vocabulary, args.train_data_path) # assumes the names of columns are correct. Possible to break here!
-        valid_dataset = AmazonFineFoodDataset(tokenizer, vocabulary, args.valid_data_path) # assumes the names of columns are correct. Possible to break here!
+        train_dataset = AmazonFineFoodDataset(tokenizer, vocabulary, vocabulary([args.end_token]), args.train_data_path) # assumes the names of columns are correct. Possible to break here!
+        valid_dataset = AmazonFineFoodDataset(tokenizer, vocabulary, vocabulary([args.end_token]), args.valid_data_path) # assumes the names of columns are correct. Possible to break here!
 
         # Load training, validation datasets into dataloaders
         trainloader = DataLoader(train_dataset,batch_sampler=BucketSampler(train_dataset, args.train_batchsize, trainloader_generator, bucket_multiplier=args.bucket_multiplier, drop_last=True, shuffle=True), collate_fn=collate_batch, num_workers=args.num_workers)
@@ -433,6 +433,7 @@ if __name__ == "__main__":
     parser.add_argument('-t', '--tokenizer', metavar='<NAME>', type=str, help=f'choice of tokenizer (default: {TOKENIZER})', default=TOKENIZER)
     parser.add_argument('-l', '--language', metavar='<NAME>', type=str, help=f'choice of language (default: {LANGUAGE})', default=LANGUAGE)
     parser.add_argument('--pad-token', metavar='<NAME>', type=str, help=f'choice of pad token (default: {PAD_TOKEN})', default=PAD_TOKEN)
+    parser.add_argument('--end-token', metavar='<NAME>', type=str, help=f'choice of end token (default: {END_TOKEN})', default=END_TOKEN)
     # Dataloader
     parser.add_argument('--num-workers', metavar='<COUNT>', type=int, help=f'set the number of processes for data loading multiprocessing (default: {NUM_WORKERS})', default=NUM_WORKERS)
     parser.add_argument('-e', '--epochs', metavar='<COUNT>', type=int, help=f'set the number of episodes to run (default: {NUM_EPOCHS})', default=NUM_EPOCHS)
