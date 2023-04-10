@@ -23,8 +23,13 @@ def compute_metrics(metrics_dict:dict[str,list], vocabulary:Vocab, rouge_compute
     return metrics_dict
 
 def collate_metrics(metrics_dict:dict[str,list]):
-    """Applies np.mean to the lists of metrics_dict"""
-    tmp_dict = {k: npmean(v) for k,v in metrics_dict.items()}
+    """Applies np.mean to last 10 items of lists of metrics_dict"""
+    tmp_dict = {k: [npmean(v[-10:])] for k,v in metrics_dict.items()}
+    return tmp_dict
+
+def collate_metrics_all(metrics_dict:dict[str,list]):
+    """Applies np.mean to the entirety of lists of metrics_dict"""
+    tmp_dict = {k: [npmean(v)] for k,v in metrics_dict.items()}
     return tmp_dict
 
 def append_metrics(from_metrics_dict:dict[str,list], to_metrics_dict:dict[str,list]):
@@ -36,6 +41,15 @@ def append_metrics(from_metrics_dict:dict[str,list], to_metrics_dict:dict[str,li
     return tmp_dict
 
 def print_metrics(metrics_dict:dict[str,list]):
+    r"""Prints mean of past 10 iterations for each metric.
+    """
     tmp_metrics = collate_metrics(metrics_dict)
     for k,v in tmp_metrics.items():
-        print(f"cul. ave. {k} : {v:0.4f}")
+        print(f"cul. ave. {k} : {v[0]:0.4f}")
+
+def print_metrics_all(metrics_dict:dict[str,list]):
+    r"""Prints mean of all iterations for each metric.
+    """
+    tmp_metrics = collate_metrics_all(metrics_dict)
+    for k,v in tmp_metrics.items():
+        print(f"cul. ave. {k} : {v[0]:0.4f}")

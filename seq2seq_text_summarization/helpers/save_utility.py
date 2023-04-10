@@ -6,7 +6,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch import Tensor, save
 from os import mkdir, rename
 from os.path import isdir
-from .training import collate_metrics
+from .training import collate_metrics_all
 
 def save_checkpoint(
     args : ArgumentParser,
@@ -33,7 +33,7 @@ def save_checkpoint(
     assert type(save_slot)==int, f"Save slot must be integer! Got {type(save_slot)}"
     if verbose:
         print("-"*50)
-        print(f'Saving checkpoint at iteration {iter:6d}/{max_num_iters_epoch:6d} of epoch {epoch:4d} in save slot {save_slot}...')
+        print(f'Saving checkpoint at iteration {iter}/{max_num_iters_epoch} of epoch {epoch} in save slot {save_slot}...')
     state = {
         'args': args,
         'model_state_dict': model.state_dict(),
@@ -75,7 +75,7 @@ def save_test(test_loss : float, metrics : dict, save_slot : Union[int, None] = 
     if not isdir('test_results'):
         mkdir('test_results')
     
-    tmp_metrics = collate_metrics(metrics)
+    tmp_metrics = collate_metrics_all(metrics)
 
     if save_slot != None:
         save({"metrics" : tmp_metrics, "test_loss" : test_loss}, f"./test_results/result{save_slot}.pt")

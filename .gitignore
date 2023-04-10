@@ -133,3 +133,4 @@ dmypy.json
 data/
 *.pth
 saves/
+logs/

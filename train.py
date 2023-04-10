@@ -15,7 +15,7 @@ import os
 from textwrap import dedent
 from typing import Tuple
 
-from seq2seq_text_summarization.helpers.training import setup_metrics_dict, compute_metrics, collate_metrics, append_metrics, print_metrics
+from seq2seq_text_summarization.helpers.training import setup_metrics_dict, compute_metrics, collate_metrics_all, append_metrics, print_metrics, print_metrics_all
 from seq2seq_text_summarization.helpers.save_utility import save_checkpoint
 from seq2seq_text_summarization.helpers.rng import generator_obj_seed
 
@@ -106,7 +106,7 @@ def train_epoch(
             # #DEBUGGING END
             if logit.size(0) < batch_max_target_len:
                 len_diff = batch_max_target_len - logit.size(0)
-                logit_padding = torch.zeros(len_diff, vocab_size).to(device)
+                logit_padding = torch.zeros(len_diff, vocab_size).requires_grad_(False).to(device)
                 padded_output_logits.append(torch.vstack((logit, logit_padding)).contiguous())
             else:
                 padded_output_logits.append(logit[:batch_max_target_len])
@@ -137,7 +137,7 @@ def train_epoch(
 
         if verbose and (batch_idx+1) % print_freq == 0:
             print("-"*50)
-            print(f"iteration : {batch_idx+1:3d}, culmulative average training loss : {npmean(train_loss):0.4f}")
+            print(f"iteration : {batch_idx+1:3d}, culmulative average training loss over past 10 training iterations : {npmean(train_loss[-10:]):0.4f}")
             print_metrics(train_metrics)
 
         
@@ -146,7 +146,7 @@ def train_epoch(
             val_loss.append(eval_loss)
             val_metrics = append_metrics(eval_metrics, val_metrics)
             if verbose:
-                print(f"iteration : {batch_idx+1:3d}, culmulative average validation loss : {npmean(val_loss):0.4f}")
+                print(f"iteration : {batch_idx+1:3d}, culmulative average validation loss over past 10 validation iterations: {npmean(val_loss[-10:]):0.4f}")
                 print_metrics(val_metrics)
             if eval_loss < best_val_loss:
                 best_val_loss = eval_loss
@@ -214,7 +214,7 @@ def eval(
     with torch.inference_mode():
         if verbose:
             print("-"*50)
-            print(f'Validating iteration {iter_count:6d}/{max_num_iters:6d} of epoch {epoch_count+1:4d}...')
+            print(f'Validating iteration {iter_count}/{max_num_iters} of epoch {epoch_count}...')
         for _, (text, summ) in enumerate(testloader):
             # text, summ are packed_sequences
             text, summ = text.to(device), summ.to(device)
@@ -238,7 +238,7 @@ def eval(
             for logit in output_logits:
                 if logit.size(0) < batch_max_target_len:
                     len_diff = batch_max_target_len - logit.size(0)
-                    logit_padding = torch.zeros(len_diff, vocab_size).to(device)
+                    logit_padding = torch.zeros(len_diff, vocab_size).requires_grad_(False).to(device)
                     padded_output_logits.append(torch.vstack((logit, logit_padding)).contiguous())
                 else:
                     padded_output_logits.append(logit[:batch_max_target_len])
@@ -250,7 +250,7 @@ def eval(
             # Compute metrics via helper function
             metrics = compute_metrics(metrics,vocabulary,rouge,output_seq,summ)
 
-    metrics = collate_metrics(metrics)
+    metrics = collate_metrics_all(metrics)
 
     return npmean(test_loss), metrics
 
@@ -496,11 +496,11 @@ def main(args):
             print("-"*50)
             print(f"Epoch {epoch:4d}/{args.epochs}, culmulative training loss : {npmean(training_loss):0.4f}, culmulative validation loss : {npmean(validation_loss):0.4f}")
             print("-"*50)
-            print("TRAINING METRICS")
-            print_metrics(training_metrics)
+            print("TRAINING METRICS, mean across epoch")
+            print_metrics_all(training_metrics)
             print("-"*50)
-            print("VALIDATION METRICS")
-            print_metrics(validation_metrics)
+            print("VALIDATION METRICS, mean across epoch")
+            print_metrics_all(validation_metrics)
             print("-"*50)
 
 def debug_parser(args):
