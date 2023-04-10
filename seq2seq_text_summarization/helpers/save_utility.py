@@ -4,7 +4,7 @@ from torch.nn import Module
 from torch.optim import SGD, Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch import Tensor, save
-from os import mkdir, rename
+from os import mkdir, path, remove, rename
 from os.path import isdir
 from .training import collate_metrics_all
 
@@ -33,7 +33,7 @@ def save_checkpoint(
     assert type(save_slot)==int, f"Save slot must be integer! Got {type(save_slot)}"
     if verbose:
         print("-"*50)
-        print(f'Saving checkpoint at iteration {iter}/{max_num_iters_epoch} of epoch {epoch} in save slot {save_slot}...')
+        print(f'Saving {"best " if isBest else ""}checkpoint at iteration {iter}/{max_num_iters_epoch} of epoch {epoch} in save slot {save_slot}...')
     state = {
         'args': args,
         'model_state_dict': model.state_dict(),
@@ -60,6 +60,8 @@ def save_checkpoint(
     else:
         # save(state, f'./saves/save{save_slot}_epoch{epoch}_iter{iter}.pt')
         try:
+            if path.exists(f'./saves/save{save_slot}_prevLatest.pt'):
+                remove(f'./saves/save{save_slot}_prevLatest.pt')
             rename(f'./saves/save{save_slot}_latest.pt', f'./saves/save{save_slot}_prevLatest.pt')
         except FileNotFoundError:
             pass

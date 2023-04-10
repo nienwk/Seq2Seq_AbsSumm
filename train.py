@@ -256,6 +256,8 @@ def eval(
 
 
 def main(args):
+    if args.debug:
+        torch.autograd.set_detect_anomaly(True)
     if type(args.load) == str:
         assert args.load in os.listdir(f'./saves/'), f"save {args.load} is not found!"
 
@@ -515,6 +517,7 @@ if __name__ == "__main__":
     '''Run the Seq2Seq model.
     '''), allow_abbrev=False)
     parser.add_argument('-v', '--verbose', action='store_true', help='show progress as model trains (default: False)', default=False)
+    parser.add_argument('--debug', action=argparse.BooleanOptionalAction, help='crash the training if NaN/inf anomaly detected.', default=False)
     # Reproducibility
     parser.add_argument('--pytorch-seed', metavar='<SEED>', type=int, help='set pytorch initial seed (default: None)', default=None)
     parser.add_argument('--trainloader-seed', metavar='<SEED>', type=int, help='set training dataset Dataloader initial seed (default: None)', default=None)
