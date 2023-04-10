@@ -97,6 +97,8 @@ class BucketSampler(Sampler):
     def __len__(self) -> int:
         if len(self.data_source) % self.batch_size == 0:
             return int(len(self.data_source) // self.batch_size)
+        elif self.drop_last:
+            return int(len(self.data_source) // self.batch_size)
         else:
             return int(len(self.data_source) // self.batch_size) + 1
         
