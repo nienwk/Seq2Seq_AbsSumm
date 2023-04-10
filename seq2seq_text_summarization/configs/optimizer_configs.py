@@ -1,7 +1,7 @@
 # We shall use the Adam or SGD optimizer.
 # The configs are hyperparameters to be tuned.
 
-OPTIMIZER = "Adam" # OR "SGD"
+OPTIMIZER = "Adam" # "Adam" OR "SGD"
 INITIAL_LEARNING_RATE = 0.01
 WEIGHT_DECAY = 5e-4
 

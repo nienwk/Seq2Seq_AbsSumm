@@ -4,7 +4,7 @@ from torch.nn import Module
 from torch.optim import SGD, Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch import Tensor, save
-from os import mkdir
+from os import mkdir, rename
 from os.path import isdir
 from .training import collate_metrics
 
@@ -58,8 +58,13 @@ def save_checkpoint(
     if isBest:
         save(state, f'./saves/save{save_slot}_best.pt')
     else:
-        save(state, f'./saves/save{save_slot}_epoch{epoch}_iter{iter}.pt')
-        save(state, f'./saves/save{save_slot}_latest.pt')
+        # save(state, f'./saves/save{save_slot}_epoch{epoch}_iter{iter}.pt')
+        try:
+            rename(f'./saves/save{save_slot}_latest.pt', f'./saves/save{save_slot}_prevLatest.pt')
+        except FileNotFoundError:
+            pass
+        finally:
+            save(state, f'./saves/save{save_slot}_latest.pt')
 
 def save_epoch_loss_and_metrics():
     pass

@@ -63,7 +63,6 @@ def train_epoch(
 
     rouge=ROUGEScore(rouge_keys=rouge_keys)
     vocab_size = len(vocabulary)
-    lr = args.learning_rate / 4.0
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if verbose:
@@ -102,21 +101,30 @@ def train_epoch(
         padded_output_logits = []
         
         for logit in output_logits:
+            # #DEBUGGING START
+            # print(logit)
+            # #DEBUGGING END
             if logit.size(0) < batch_max_target_len:
                 len_diff = batch_max_target_len - logit.size(0)
-                logit_padding = torch.empty(len_diff, vocab_size).to(device)
-                padded_output_logits.append(torch.vstack((logit, logit_padding)))
+                logit_padding = torch.zeros(len_diff, vocab_size).to(device)
+                padded_output_logits.append(torch.vstack((logit, logit_padding)).contiguous())
             else:
                 padded_output_logits.append(logit[:batch_max_target_len])
         padded_output_logits = torch.stack(padded_output_logits, dim=0).permute(0,2,1)
         
+        # #DEBUGGING START
+        # print("-"*50)
+        # print("Padded output logits:")
+        # print(padded_output_logits)
+        # print(padded_output_logits.shape)
+        # print("-"*50)
+        # #DEBUGGING END
+
         loss = criterion(padded_output_logits, padded_target_summs)
         loss.backward()
 
         # Gradient clipping, adapted from https://github.com/pytorch/examples/blob/main/word_language_model/main.py#L190-L192
         torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
-        for p in net.parameters():
-            p.data.add_(p.grad, alpha=-lr)
 
         optimizer.step()
         if not(scheduler is None):
@@ -230,8 +238,8 @@ def eval(
             for logit in output_logits:
                 if logit.size(0) < batch_max_target_len:
                     len_diff = batch_max_target_len - logit.size(0)
-                    logit_padding = torch.empty(len_diff, vocab_size).to(device)
-                    padded_output_logits.append(torch.vstack((logit, logit_padding)))
+                    logit_padding = torch.zeros(len_diff, vocab_size).to(device)
+                    padded_output_logits.append(torch.vstack((logit, logit_padding)).contiguous())
                 else:
                     padded_output_logits.append(logit[:batch_max_target_len])
             padded_output_logits = torch.stack(padded_output_logits, dim=0).permute(0,2,1)

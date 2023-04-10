@@ -179,17 +179,31 @@ class Model1(nn.Module):
         
         # For first round, we dont need to choose top-k again amongst stack_of_hypotheses
         remaining_stack_of_hypotheses = stack_of_hypotheses
+
+        # # DEBUGGING START
+        # print("------------------------------------------------")
+        # print("Initial remaining_stack_of_hypotheses:")
+        # for i in remaining_stack_of_hypotheses:
+        #     print(i)
+        # print("End of Initial remaining_stack_of_hypotheses")
+        # print("Initial completed_hypotheses:")
+        # for i in completed_hypotheses:
+        #     print(i)
+        # print("End of Initial completed_hypotheses")
+        # print("------------------------------------------------")
+        # # DEBUGGING END
+
         stack_of_hypotheses = self.__init_tracking_list(N)
         
         # ---------------------------------------------------------
-        # Prepare isDone NumPy boolean array, to track if all N batch items are done. For use to terminate while loop.
+        # Prepare isDone PyTorch boolean array, to track if all N batch items are done. For use to terminate while loop.
         # ---------------------------------------------------------
-        isDone = np.zeros(N)==1 # boolean array, initialize to all False
+        isDone = (torch.zeros(N)==1).requires_grad_(False) # boolean array, initialize to all False
         reached_hypothesis_limit = self.__reached_hypothesis_limit(completed_hypotheses)
         isDone += reached_hypothesis_limit
 
         if self.generation_limit == decoding_timestep:
-            isDone = np.ones(N)==1
+            isDone = (torch.ones(N)==1).requires_grad_(False)
             for batch_idx, lst in enumerate(remaining_stack_of_hypotheses):
                 completed_hypotheses[batch_idx].extend(lst)
         decoding_timestep += 1
@@ -205,7 +219,7 @@ class Model1(nn.Module):
         # ---------------------------------------------------------
         # while loop shenanigans
         # ---------------------------------------------------------
-        while not np.all(isDone):
+        while not torch.all(isDone):
             batch_items_left = self.__get_notDone_indices(isDone)
             len_batch_items_left = len(batch_items_left)
 
@@ -214,7 +228,7 @@ class Model1(nn.Module):
             # remaining hypotheses' (we call the number of remaining hypotheses `kk_n` for ~this~ batch_items_left, [], 1 <= kk_n <= k = self.beam_search_k)
             # last words (i.e. GeneratedWord's),
             # and their relevant decoder input stuff (vocab_idx, hidden, cell, padded_encoder_output, attention_key_padding_mask).
-            # For each n, track kk_n -> make a list of number of last words belonging to each n. Use np.cumsum to create indices.
+            # For each n, track kk_n -> make a list of number of last words belonging to each n. Use torch.cumsum to create indices.
             # Stack all the decoder input stuff accordingly.
             # ---------------------------------------------------------
             # Prepare dummy decoder input stuff to use with torch.vstack in for loops.
@@ -237,7 +251,19 @@ class Model1(nn.Module):
                     stacked_attentional_vectors = torch.vstack((stacked_attentional_vectors, hypothesis.attentional_vector))
                     num_hypothesis_in_stack[i] += 1
             
-            cum_num_hypothesis_in_stack = np.cumsum(np.array([0]+num_hypothesis_in_stack)) # will look like [0, x, x+y, ...]
+            # # DEBUGGING START
+            # print("------------------------------------------------")
+            # print(f"Number of hypothesis in stack: {num_hypothesis_in_stack}")
+            # print("------------------------------------------------")
+            # # DEBUGGING END
+
+            cum_num_hypothesis_in_stack = torch.cumsum(torch.IntTensor([0]+num_hypothesis_in_stack).requires_grad_(False), -1) # will look like [0, x, x+y, ...]
+
+            # # DEBUGGING START
+            # print("------------------------------------------------")
+            # print(f"Cum. sum. in stack: {cum_num_hypothesis_in_stack}")
+            # print("------------------------------------------------")
+            # # DEBUGGING END
 
             # Trim dummy entry from each decoder input stuff
             stacked_vocab = stacked_vocab[1:] # shape = [O(n*kk_n), 1]
@@ -312,7 +338,7 @@ class Model1(nn.Module):
             isDone += reached_hypothesis_limit
 
             if self.generation_limit == decoding_timestep:
-                isDone = np.ones(N)==1
+                isDone = (torch.ones(N)==1).requires_grad_(False)
                 for batch_idx, lst in enumerate(remaining_stack_of_hypotheses):
                     completed_hypotheses[batch_idx].extend(lst)
                 break
@@ -341,8 +367,15 @@ class Model1(nn.Module):
         attn_weights = list(map(lambda hypothesis: hypothesis.get_attn_weights(), best_hypotheses))
         # attn_weights is a list of N tensors, with each tensor having shape = [generated seq len, batch_max_input_seq_len]
 
-        # TODO Consider what to do if generated summary is shorter than GT summary, to compute loss.
-        # Better to do in train.py and test.py
+        # # DEBUGGING START
+        # print("--------------------------------")
+        # print("END OF TRAINING ITER")
+        # print("--------------------------------")
+        # for i,j in enumerate(output_seq):
+        #     print(f"output sequence {i}: {j}")
+        # print(f"Length of logits: {list(map(lambda x:len(x),output_logits))}")
+        # print("--------------------------------")
+        # # DEBUGGING END
         return output_seq, output_logits, attn_weights
 
     def __init_tracking_list(self, N:int) -> list:
@@ -353,16 +386,16 @@ class Model1(nn.Module):
         """
         return list(map(lambda lst: len(lst), l))
     
-    def __reached_hypothesis_limit(self, l:list) -> np.ndarray:
+    def __reached_hypothesis_limit(self, l:list) -> torch.Tensor:
         r"""For use with `completed_hypotheses` list.
         
-        Returns NumPy boolean array.
+        Returns torch.Tensor boolean array.
         """
-        return np.array(self.__compute_lengths_of_inner_list(l)) >= self.hypothesis_limit
+        return (torch.Tensor(self.__compute_lengths_of_inner_list(l)) >= self.hypothesis_limit).requires_grad_(False)
     
-    def __get_notDone_indices(self, isDone:np.array) -> list:
+    def __get_notDone_indices(self, isDone:torch.BoolTensor) -> list:
         r"""Internal helper function to get list of indices where isDone is False."""
-        return np.argwhere(isDone==False).squeeze().tolist()
+        return (isDone==False).nonzero(as_tuple=False).squeeze(1).tolist()
     
     def __filter_stack_of_hypotheses(self, stack_of_hypotheses):
         r"""Internal helper function to select top-k from O(k^2) hypotheses in input `stack_of_hypotheses`."""
@@ -371,9 +404,9 @@ class Model1(nn.Module):
     def __no_more_remaining_hypothesis(self, l:list) -> list:
         r"""For use with `remaining_stack_of_hypotheses` list.
         
-        Returns NumPy boolean array.
+        Returns torch.Tensor boolean array.
         """
-        return np.array(self.__compute_lengths_of_inner_list(l)) == 0
+        return (torch.Tensor(self.__compute_lengths_of_inner_list(l)) == 0).requires_grad_(False)
     
     def __get_best_hypothesis(self, l:list):
         r"""For use with `completed_hypotheses` list.
