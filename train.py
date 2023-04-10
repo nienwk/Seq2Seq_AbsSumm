@@ -261,7 +261,7 @@ def main(args):
     if type(args.load) == str:
         assert args.load in os.listdir(f'./saves/'), f"save {args.load} is not found!"
 
-        checkpoint = torch.load(f'./saves/{args.load}.pt')
+        checkpoint = torch.load(f'./saves/{args.load}')
 
         # Load previous input arguments, overrides all current arguments except verbosity
         new_verbose = args.verbose

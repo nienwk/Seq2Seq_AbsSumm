@@ -134,3 +134,4 @@ data/
 *.pth
 saves/
 logs/
+test_results/

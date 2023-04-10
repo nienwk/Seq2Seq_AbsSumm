@@ -83,6 +83,12 @@ def save_test(test_loss : float, metrics : dict, save_slot : Union[int, None] = 
         save({"metrics" : tmp_metrics, "test_loss" : test_loss}, f"./test_results/result{save_slot}.pt")
 
     if verbose:
-        print(f"\nTesting loss : {test_loss}.")
-        for k,v in tmp_metrics:
-            print(f"{k} : {v}.")
+        print(f"Testing loss : {test_loss:1.5f}.")
+        print("-"*50)
+        print(f"Metrics:")
+        print("-"*50)
+        for k,v in tmp_metrics.items():
+            print(f"{k} : {v[0]:1.5f}.")
+        print("-"*50)
+    
+    print(f"Test complete. Results saved at ./test_results/result{save_slot}.pt")
